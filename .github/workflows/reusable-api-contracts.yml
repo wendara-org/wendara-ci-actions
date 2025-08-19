@@ -236,6 +236,13 @@ jobs:
           HEAD_REF="${{ github.sha }}"
           .wendara-ci-actions/scripts/oasdiff-changelog.sh "$BASE_REF" "$HEAD_REF" CHANGELOG.md
 
+      - name: Show changelog in logs
+        if: always()
+        run: |
+          echo "==================== CHANGELOG.md ===================="
+          cat CHANGELOG.md || echo "No changelog file generated."
+          echo "======================================================"
+
       - name: Upload changelog artifact
         uses: actions/upload-artifact@v4
         with:
