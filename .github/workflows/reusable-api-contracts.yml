@@ -215,8 +215,11 @@ jobs:
       - name: Make scripts executable
         run: chmod +x .wendara-ci-actions/scripts/*.sh
 
-      - name: Pull oasdiff image
-        run: docker pull quay.io/tufin/oasdiff:v1.11.6
+      - name: Install oasdiff
+        run: |
+          curl -L https://github.com/oasdiff/oasdiff/releases/download/v1.11.6/oasdiff-linux-amd64 -o oasdiff
+          chmod +x oasdiff
+          sudo mv oasdiff /usr/local/bin
 
       - name: Run semantic guard
         env:
