@@ -216,7 +216,7 @@ jobs:
         run: chmod +x .wendara-ci-actions/scripts/*.sh
 
       - name: Pull oasdiff image
-        run: docker pull quay.io/tufin/oasdiff:latest
+        run: docker pull quay.io/tufin/oasdiff:v1.11.6
 
       - name: Run semantic guard
         env:

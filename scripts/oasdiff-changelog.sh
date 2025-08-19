@@ -34,7 +34,7 @@ for SPEC in ${CHANGED}; do
   echo "## ${API_DIR}" >> "$OUT_FILE"
   echo "" >> "$OUT_FILE"
   set +e
-  docker run --rm -v "$PWD":/work -w /work quay.io/tufin/oasdiff:latest \
+  docker run --rm -v "$PWD":/work -w /work quay.io/tufin/oasdiff:v1.11.6 \
     changelog "${BASE_REF}:${SPEC}" "${HEAD_REF}:${SPEC}" >> "$OUT_FILE" 2>/dev/null
   CODE=$?
   set -e

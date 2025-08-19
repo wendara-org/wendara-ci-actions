@@ -66,7 +66,7 @@ read -r HEAD_M HEAD_m HEAD_p <<< "$(semver_parts "${HEAD_VERSION}")"
 # https://github.com/Tufin/oasdiff
 DIFF_OUT=".oasguard/diff.txt"
 set +e
-docker run --rm -v "$PWD":/work -w /work quay.io/tufin/oasdiff:latest \
+docker run --rm -v "$PWD":/work -w /work quay.io/tufin/oasdiff:v1.11.6 \
   breaking "${BASE_FILE}" "${HEAD_FILE}" --fail-on-diff > "${DIFF_OUT}" 2>&1
 OAS_CODE=$?
 set -e
