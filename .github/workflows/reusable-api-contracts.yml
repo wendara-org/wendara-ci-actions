@@ -1,0 +1,383 @@
+# .github/workflows/reusable-api-contracts.yml
+#
+# Reusable workflow for API-first repositories (e.g., wendara-api-definitions).
+# It validates OpenAPI contracts, enforces semantic versioning with an OAS diff guard,
+# optionally generates Redoc HTML previews, publishes only CHANGED APIs as artifacts,
+# and after a stable release on main, opens an automatic sync PR main → develop.
+#
+# Inputs (set by the caller workflow):
+#   - java_version: string (default "21")      -> Java toolchain for Gradle tasks
+#   - node_version: string (default "22")      -> Node.js version for Redoc/linters
+#   - run_redoc: boolean (default true)        -> Build Redoc previews if true
+#   - publish_enabled: boolean (default false) -> Publish artifacts if true (use on push, not on PR)
+#   - require_listed_only: boolean (default true) -> If true, only APIs present in root metadata.yml are eligible
+#
+# Secrets (provided by the caller):
+#   - PACKAGES_TOKEN -> Token with packages:write (usually the caller's GITHUB_TOKEN)
+#
+# Outputs:
+#   - changed_specs: space-separated list of changed openapi.yaml paths
+#   - any_changed: "true"/"false"
+#   - released: "true"/"false" (only true when publishing stable on main)
+#
+# Notes:
+# - This workflow assumes the consumer repo has:
+#     apis/<transport>/<apiName>/<major>/openapi.yaml
+#     (optional) per-API metadata.yml next to each spec
+#     (optional) root metadata.yml at repo root (as a whitelist index)
+#     (optional) .redocly.yaml at repo root
+# - This repo (wendara-ci-actions) provides helper scripts under ./scripts:
+#     - api-oasdiff-guard.sh
+#     - redoc-build.sh
+#     - oasdiff-changelog.sh   (you should include this script in this repo)
+#
+name: Reusable · API Contracts
+
+on:
+  workflow_call:
+    inputs:
+      java_version:
+        description: "Java version for Gradle"
+        required: false
+        default: "21"
+        type: string
+      node_version:
+        description: "Node version for Redoc/linters"
+        required: false
+        default: "22"
+        type: string
+      run_redoc:
+        description: "Generate Redoc HTML previews"
+        required: false
+        default: true
+        type: boolean
+      publish_enabled:
+        description: "Publish artifacts (use on push, not PR)"
+        required: false
+        default: false
+        type: boolean
+      require_listed_only:
+        description: "Only consider APIs listed in root metadata.yml"
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      PACKAGES_TOKEN:
+        required: false
+    outputs:
+      changed_specs:
+        description: "Space-separated list of changed openapi.yaml paths"
+        value: ${{ jobs.detect.outputs.changed_specs }}
+      any_changed:
+        description: "Whether any OpenAPI spec changed"
+        value: ${{ jobs.detect.outputs.any_changed }}
+      released:
+        description: "Whether we published a stable release on main"
+        value: ${{ jobs.publish.outputs.released }}
+
+jobs:
+
+  detect:
+    # Detect which API specs changed in this push/PR.
+    # The result is a space-separated list of apis/*/*/*/openapi.yaml.
+    name: Detect changed API specs
+    runs-on: ubuntu-latest
+    outputs:
+      changed_specs: ${{ steps.collect.outputs.changed_specs }}
+      any_changed: ${{ steps.collect.outputs.any_changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: List changed files (OpenAPI specs + per-API metadata + root metadata + redoc config)
+        id: changed
+        uses: tj-actions/changed-files@v44
+        with:
+          files: |
+            apis/*/*/*/openapi.yaml
+            apis/*/*/*/metadata.yml
+            metadata.yml
+            .redocly.yaml
+
+      - name: Collect changed specs
+        id: collect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Gather directly changed specs
+          DIRECT_SPECS=()
+          for f in ${{ steps.changed.outputs.all_changed_files }}; do
+            if [[ "$f" == apis/*/*/*/openapi.yaml ]]; then
+              DIRECT_SPECS+=("$f")
+            fi
+          done
+
+          # If per-API metadata changed, map it to its sibling openapi.yaml
+          for f in ${{ steps.changed.outputs.all_changed_files }}; do
+            if [[ "$f" == apis/*/*/*/metadata.yml ]]; then
+              d="$(dirname "$f")"
+              if [[ -f "$d/openapi.yaml" ]]; then
+                DIRECT_SPECS+=("$d/openapi.yaml")
+              fi
+            fi
+          done
+
+          # Deduplicate
+          # shellcheck disable=SC2206
+          UNIQUE=($(printf "%s\n" "${DIRECT_SPECS[@]}" | sort -u))
+
+          # If root metadata.yml changed, we may need to re-include all listed APIs.
+          ROOT_CHANGED=false
+          for f in ${{ steps.changed.outputs.all_changed_files }}; do
+            if [[ "$f" == "metadata.yml" ]]; then ROOT_CHANGED=true; fi
+          done
+
+          if $ROOT_CHANGED; then
+            # Optional: if root index changed, include all listed specs from it.
+            # We will filter later according to require_listed_only in the publish stage.
+            # In detect, just add everything already in the repo under apis/*/*/*/openapi.yaml
+            while IFS= read -r spec; do
+              UNIQUE+=("$spec")
+            done < <(git ls-files 'apis/*/*/*/openapi.yaml')
+          fi
+
+          # Final unique list
+          # shellcheck disable=SC2206
+          UNIQUE=($(printf "%s\n" "${UNIQUE[@]}" | sort -u))
+          if [[ ${#UNIQUE[@]} -eq 0 ]]; then
+            echo "changed_specs=" >> $GITHUB_OUTPUT
+            echo "any_changed=false" >> $GITHUB_OUTPUT
+          else
+            CHANGED_SPECS=$(printf "%s " "${UNIQUE[@]}")
+            echo "changed_specs=${CHANGED_SPECS}" >> $GITHUB_OUTPUT
+            echo "any_changed=true" >> $GITHUB_OUTPUT
+          fi
+
+  validate:
+    # Lint OpenAPI specs with Redocly (if present) and enforce Conventional Commits (on PR).
+    name: Lint + Conventional Commits
+    runs-on: ubuntu-latest
+    needs: [detect]
+    if: needs.detect.outputs.any_changed == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Conventional Commits check (PRs only). No local hooks required.
+      - name: Commitlint (Conventional Commits)
+        if: github.event_name == 'pull_request'
+        uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: .commitlintrc.json
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install Redocly CLI
+        run: npm i -g @redocly/cli@1
+
+      - name: Redocly lint (all changed specs)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for spec in ${{ needs.detect.outputs.changed_specs }}; do
+            echo "Linting '${spec}'"
+            redocly lint "$spec"
+          done
+
+  guard:
+    # Semantic diff guard with oasdiff; fails on breaking changes when version bump is insufficient.
+    name: Semantic diff guard (oasdiff)
+    runs-on: ubuntu-latest
+    needs: [detect]
+    if: needs.detect.outputs.any_changed == 'true'
+    steps:
+      - name: Checkout (include scripts)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          repository: ${{ github.repository }}  # consumer repo
+
+      - name: Checkout ci-actions (to get scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: wendara/wendara-ci-actions
+          path: .wendara-ci-actions
+          ref: main
+
+      - name: Make scripts executable
+        run: chmod +x .wendara-ci-actions/scripts/*.sh
+
+      - name: Pull oasdiff image
+        run: docker pull quay.io/tufin/oasdiff:latest
+
+      - name: Run semantic guard
+        env:
+          CHANGED_SPECS: ${{ needs.detect.outputs.changed_specs }}
+        run: |
+          # Delegates to the shared script which:
+          # - computes base ref (PR base SHA or previous push SHA)
+          # - classifies MAJOR/MINOR/PATCH
+          # - fails on breaking changes unless version bump is compliant
+          .wendara-ci-actions/scripts/api-oasdiff-guard.sh "$CHANGED_SPECS"
+
+      - name: Generate API changelog (oasdiff)
+        # Produces a Markdown changelog per changed API and uploads as artifact.
+        run: |
+          chmod +x .wendara-ci-actions/scripts/oasdiff-changelog.sh
+          BASE_REF="${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}"
+          HEAD_REF="${{ github.sha }}"
+          .wendara-ci-actions/scripts/oasdiff-changelog.sh "$BASE_REF" "$HEAD_REF" CHANGELOG.md
+
+      - name: Upload changelog artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-changelog
+          path: CHANGELOG.md
+          retention-days: 7
+
+  redoc:
+    # Optional Redoc HTML previews for reviewers; attached as artifacts.
+    name: Build Redoc previews
+    runs-on: ubuntu-latest
+    needs: [detect]
+    if: needs.detect.outputs.any_changed == 'true' && inputs.run_redoc
+    steps:
+      - name: Checkout (include scripts)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          repository: ${{ github.repository }}
+
+      - name: Checkout ci-actions (to get scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: wendara/wendara-ci-actions
+          path: .wendara-ci-actions
+          ref: main
+
+      - name: Make scripts executable
+        run: chmod +x .wendara-ci-actions/scripts/*.sh
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install Redocly CLI
+        run: npm i -g @redocly/cli@1
+
+      - name: Build Redoc HTML previews
+        env:
+          CHANGED_SPECS: ${{ needs.detect.outputs.changed_specs }}
+        run: |
+          mkdir -p redoc-previews
+          for spec in $CHANGED_SPECS; do
+            api_dir="$(dirname "$spec")"
+            api_name="$(echo "$api_dir" | tr '/' '-')"
+            out_html="redoc-previews/${api_name}.html"
+            .wendara-ci-actions/scripts/redoc-build.sh "$spec" "$out_html"
+            echo "Generated: '$out_html'"
+          done
+
+      - name: Upload Redoc previews
+        uses: actions/upload-artifact@v4
+        with:
+          name: redoc-previews
+          path: redoc-previews/
+          retention-days: 7
+
+  publish:
+    # Publish changed specs as Maven artifacts to GitHub Packages (or mavenLocal in local runs).
+    name: Publish changed specs
+    runs-on: ubuntu-latest
+    needs: [detect, validate, guard]  # ensure validations pass before publishing
+    if: needs.detect.outputs.any_changed == 'true' && inputs.publish_enabled
+    outputs:
+      released: ${{ steps.flag.outputs.released }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install yq (required by Gradle build.kts)
+        run: |
+          sudo curl -sSL -o /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java_version }}
+          cache: gradle
+
+      - name: Derive release channel
+        id: channel
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            echo "value=RELEASE" >> $GITHUB_OUTPUT
+          else
+            echo "value=SNAPSHOT" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish (changed-only)
+        env:
+          GITHUB_TOKEN: ${{ secrets.PACKAGES_TOKEN || github.token }}
+        run: |
+          CHANGED="${{ needs.detect.outputs.changed_specs }}"
+          ./gradlew --no-daemon \
+            publishChangedSpecs \
+            -PchangedSpecs="$CHANGED" \
+            -PreleaseChannel="${{ steps.channel.outputs.value }}" \
+            -PrequireListedOnly="${{ inputs.require_listed_only }}"
+
+      - name: Flag release output
+        id: flag
+        shell: bash
+        run: |
+          # We consider "released=true" only when publishing on main (stable channel).
+          if [[ "${{ steps.channel.outputs.value }}" == "RELEASE" ]]; then
+            echo "released=true" >> $GITHUB_OUTPUT
+          else
+            echo "released=false" >> $GITHUB_OUTPUT
+          fi
+
+  sync:
+    # After stable publish on main, open a PR to sync main → develop.
+    name: Sync main → develop
+    runs-on: ubuntu-latest
+    needs: [publish]
+    if: needs.publish.outputs.released == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create sync PR main → develop
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.PACKAGES_TOKEN || github.token }}
+          commit-message: "chore(sync): merge main back into develop"
+          branch: chore/sync-main-into-develop
+          base: develop
+          title: "chore(sync): main → develop"
+          body: |
+            Automated PR to keep branches in sync after stable releases.
+            - Source: **main**
+            - Target: **develop**
+          labels: |
+            chore
+            sync
+          delete-branch: true

@@ -1,0 +1,13 @@
+name: Reusable - Node App
+on:
+  workflow_call:
+    inputs:
+      node: { type: string, default: "20" }
+    secrets:
+      GITHUB_TOKEN: { required: false }
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Node reusable workflow placeholder"

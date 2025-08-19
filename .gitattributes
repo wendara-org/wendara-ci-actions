@@ -1,0 +1,45 @@
+# Normalize line endings for all text files
+* text=auto eol=lf
+
+# Explicit text files (keep LF)
+*.md      text eol=lf
+*.txt     text eol=lf
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.json    text eol=lf
+*.sh      text eol=lf
+*.env     text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+.editorconfig text eol=lf
+
+# Shell scripts: ensure diff/linguist language
+*.sh linguist-language=Shell
+
+# Workflows are YAML
+.github/workflows/* linguist-language=YAML
+
+# Mark binaries to avoid diff noise
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz  binary
+*.tgz binary
+
+# Keep CRLF only where it truly matters (Windows batch)
+*.bat text eol=crlf
+
+# Export-ignore (optional): omit dotfiles and dev-only files from source archives
+# (Uncomment if you create release tarballs from this repo)
+# .github/ export-ignore
+# .gitignore export-ignore
+# .editorconfig export-ignore
+
+# Linguist tweaks (optional)
+# Count only workflows/scripts towards language stats
+# docs/** linguist-documentation

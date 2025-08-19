@@ -1,0 +1,13 @@
+name: Reusable - Backend
+on:
+  workflow_call:
+    inputs:
+      java: { type: string, default: "21" }
+    secrets:
+      GITHUB_TOKEN: { required: true }
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Backend reusable workflow placeholder"
