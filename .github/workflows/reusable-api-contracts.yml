@@ -222,14 +222,11 @@ jobs:
           sudo mv oasdiff /usr/local/bin
 
       - name: Run semantic guard
-        env:
-          CHANGED_SPECS: ${{ needs.detect.outputs.changed_specs }}
         run: |
-          # Delegates to the shared script which:
-          # - computes base ref (PR base SHA or previous push SHA)
-          # - classifies MAJOR/MINOR/PATCH
-          # - fails on breaking changes unless version bump is compliant
-          .wendara-ci-actions/scripts/api-oasdiff-guard.sh "$CHANGED_SPECS"
+          for spec in ${{ needs.detect.outputs.changed_specs }}; do
+            echo "Running semantic diff for '$spec'"
+            .wendara-ci-actions/scripts/api-oasdiff-guard.sh origin/main HEAD "$spec"
+          done
 
       - name: Generate API changelog (oasdiff)
         # Produces a Markdown changelog per changed API and uploads as artifact.
