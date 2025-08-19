@@ -343,7 +343,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.PACKAGES_TOKEN || github.token }}
         run: |
           CHANGED="${{ needs.detect.outputs.changed_specs }}"
-          ./gradlew --no-daemon \
+          ./gradlew --no-daemon --no-configuration-cache \
             publishChangedSpecs \
             -PchangedSpecs="$CHANGED" \
             -PreleaseChannel="${{ steps.channel.outputs.value }}" \
