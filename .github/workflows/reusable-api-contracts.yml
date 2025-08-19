@@ -208,7 +208,7 @@ jobs:
       - name: Checkout ci-actions (to get scripts)
         uses: actions/checkout@v4
         with:
-          repository: wendara/wendara-ci-actions
+          repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
           ref: main
 
@@ -259,7 +259,7 @@ jobs:
       - name: Checkout ci-actions (to get scripts)
         uses: actions/checkout@v4
         with:
-          repository: wendara/wendara-ci-actions
+          repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
           ref: main
 
