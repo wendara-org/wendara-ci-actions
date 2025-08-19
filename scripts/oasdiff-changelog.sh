@@ -33,6 +33,16 @@ for SPEC in ${CHANGED}; do
   API_DIR="$(dirname "${SPEC}")"
   echo "## ${API_DIR}" >> "$OUT_FILE"
   echo "" >> "$OUT_FILE"
+
+  # If new spec (not present in base), mark as first release
+  if ! git ls-tree -r "${BASE_REF}" --name-only | grep -q "^${SPEC}$"; then
+    VERSION=$(yq '.info.version' "${SPEC}" 2>/dev/null || echo "unknown")
+    echo "First release of this API '${SPEC}'. Version: \`${VERSION}\`" >> "$OUT_FILE"
+    echo "" >> "$OUT_FILE"
+    continue
+  fi
+
+  # Run diff to generate changelog
   set +e
   oasdiff changelog "${BASE_REF}:${SPEC}" "${HEAD_REF}:${SPEC}" >> "$OUT_FILE" 2>/dev/null
   CODE=$?

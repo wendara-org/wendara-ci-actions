@@ -9,7 +9,7 @@ set -euo pipefail
 #
 # Requires:
 #  - yq (mikefarah) to read YAML
-#  - Docker available to run Tufin oasdiff (quay.io/tufin/oasdiff)
+#  - oasdiff installed as a CLI binary in the runner (not Docker)
 #
 # Usage:
 #  api-oasdiff-guard.sh <base_ref> <head_ref> <spec_path>
@@ -26,9 +26,14 @@ mkdir -p .oasguard
 BASE_FILE=".oasguard/base.yaml"
 HEAD_FILE=".oasguard/head.yaml"
 
+# Check if spec exists in base branch
+if ! git ls-tree -r "${BASE_REF}" --name-only | grep -q "^${SPEC_PATH}$"; then
+  echo "::notice title=New API::Spec '${SPEC_PATH}' does not exist in '${BASE_REF}'. Skipping semantic diff check."
+  exit 0
+fi
+
 git show "${BASE_REF}:${SPEC_PATH}" > "${BASE_FILE}" || {
-  echo "::warning title=Base spec missing::Could not read '${SPEC_PATH}' at '${BASE_REF}'. Treating as new API."
-  # For new APIs require MINOR or MAJOR (not PATCH). We'll enforce MINOR+.
+  echo "::warning title=Base spec missing::Could not read '${SPEC_PATH}' at '${BASE_REF}'."
   BASE_VERSION="0.0.0"
   NEW_API=true
 }
