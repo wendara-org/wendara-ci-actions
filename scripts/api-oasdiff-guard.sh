@@ -110,7 +110,13 @@ echo "Head version: ${HEAD_VERSION}"
 echo "Required bump: ${REQUIRED}"
 
 if ! $ok; then
-  echo "::error title=Semantic version guard failed::Required '${REQUIRED}' bump not satisfied by '${HEAD_VERSION}' (base '${BASE_VERSION}')."
+  echo "$SPEC_PATH:1 Required '${REQUIRED}' version bump not satisfied by '${HEAD_VERSION}' (base: '${BASE_VERSION}')" | \
+  reviewdog -efm="%f:%l %m" \
+    -name="OASDiff Guard" \
+    -reporter=github-pr-check \
+    -level=error \
+    -fail-on-error=true
+
   echo "---- oasdiff (breaking) summary ----"
   sed -n '1,200p' "${DIFF_OUT}" || true
   exit 1

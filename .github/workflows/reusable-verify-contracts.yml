@@ -1,0 +1,39 @@
+name: Reusable · Verify All Contracts
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        description: "Node version"
+        required: false
+        default: "20"
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  verify:
+    name: Verify OpenAPI Specs (All)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout consumer repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install yq
+        run: |
+          sudo curl -sSL -o /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Run spec verification
+        run: |
+          chmod +x .wendara-ci-actions/scripts/verify-all-specs.sh
+          .wendara-ci-actions/scripts/verify-all-specs.sh
