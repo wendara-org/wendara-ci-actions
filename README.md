@@ -66,6 +66,8 @@ wendara-ci-actions/
 │  │  └─ stop-java-integration-env.sh    # Stop docker compose env
 │  └─ node/
 │     └─ node-quality.sh                 # tsc --noEmit, eslint, tests
+│     └─ build-node-app.sh               # build production application
+│     └─ run-node-unit-test.sh           # run unit tests
 └─ .github/
    └─ workflows/
       ├─ reusable-api-contracts.yml       # API-first validation and publish
@@ -289,28 +291,103 @@ jobs:
 
 ### Node Apps (`reusable-node-app.yml`)
 
-Reusable pipeline for Node/TS apps (web or mobile):
+Reusable CI pipeline for **Node.js** / **TypeScript** apps, including web (React, Next.js) and mobile (React Native).
 
-- Type checks (`tsc --noEmit`)
-- ESLint
-- Unit tests
-- Optional production build
+**What it does**
+
+1. Runs code quality checks:
+
+- `tsc --noEmit`
+- `eslint`
+- unit tests (e.g., Jest)
+
+2. (Optional) Runs a production build if `run_build: true`
+
+**Inputs**
+
+| Name           | Type    | Default | Description                                |
+|----------------|---------|---------|--------------------------------------------|
+| `node_version` | string  | `20`    | Node.js version for setup.                 |
+| `run_build`    | boolean | `false` | If true, runs `npm run build` after tests. |
+
+**Secrets**
+
+| Secret                       | Purpose                                           |
+|------------------------------|---------------------------------------------------|
+| `REVIEWDOG_GITHUB_API_TOKEN` | Required for inline PR annotations via reviewdog. |
+
+**Jobs**
+
+| Job              | Description                                  |
+|------------------|----------------------------------------------|
+| `quality-checks` | Runs `tsc`, `eslint`, and unit tests.        |
+| `build`          | Runs `npm run build` if `run_build` is true. |
+
+**Example usage** (`wendara-web/.github/workflows/ci.yml` or `wendara-mobile/.github/workflows/ci.yml`):
+
+```yaml
+name: Node App · CI
+
+on:
+  push:
+    branches: [ develop, main ]
+  pull_request:
+    branches: [ develop, main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  node:
+    uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-node-app.yml@main
+    with:
+      node_version: "20"
+      run_build: false
+    secrets:
+      REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
 
 ---
 
 ## Helper Scripts
 
-- `clean-ghcr-snapshots.sh` — Delete old snapshot images, keeping latest N + current
-- `read-version.sh` — Read the latest version from release commit
-- `api-first/api-oasdiff-guard.sh` — Guard against breaking changes
-- `api-first/oasdiff-changelog.sh` — Build changelog entries
-- `api-first/redoc-build.sh` — Generate Redoc previews
-- `api-first/verify-all-specs.sh` — Validate all specs across the repo
-- `java/gradle-quality.sh` — Run all Gradle quality tools
-- `java/run-java-unit-tests.sh` — Run unit tests
-- `java/start-java-integration-env.sh` / `stop-java-integration-env.sh` — Start/stop test infra
-- `java/run-java-integration-tests.sh` — Run integration tests
-- `node/node-quality.sh` — Type check, lint, and test TS/Node apps
+All helper scripts are located under `scripts/` and grouped by domain:
+
+### API-first (`scripts/api-first/`)
+
+| Script                 | Purpose                                                                               |
+|------------------------|---------------------------------------------------------------------------------------|
+| `api-oasdiff-guard.sh` | Runs `oasdiff` to detect **breaking changes** and classify diffs (MAJOR/MINOR/PATCH). |
+| `oasdiff-changelog.sh` | Generates changelog entries from the semantic diff.                                   |
+| `redoc-build.sh`       | Builds a static Redoc HTML preview for a given `openapi.yaml`.                        |
+| `verify-all-specs.sh`  | Validates all OpenAPI specs in the repo (structure, semver, lint).                    |
+
+### Java (`scripts/java/`)
+
+| Script                          | Purpose                                                           |
+|---------------------------------|-------------------------------------------------------------------|
+| `gradle-quality.sh`             | Runs `checkstyle`, `pmd`, `spotbugs`, and `jacoco` test coverage. |
+| `run-java-unit-tests.sh`        | Executes unit tests via Gradle.                                   |
+| `start-java-integration-env.sh` | Starts integration test environment (e.g. Docker Compose).        |
+| `run-java-integration-tests.sh` | Runs integration tests.                                           |
+| `stop-java-integration-env.sh`  | Tears down integration test environment.                          |
+
+### Node (`scripts/node/`)
+
+| Script                  | Purpose                                                            |
+|-------------------------|--------------------------------------------------------------------|
+| `node-quality.sh`       | Runs `tsc --noEmit`, `eslint`, and lints the codebase.             |
+| `run-node-unit-test.sh` | Executes unit tests for Node/TS apps (Jest, Vitest, etc.).         |
+| `build-node-app.sh`     | Builds the app for production (e.g. Next.js build, static export). |
+
+### Utilities (`scripts/`)
+
+| Script                    | Purpose                                                                      |
+|---------------------------|------------------------------------------------------------------------------|
+| `read-version.sh`         | Reads the current release version from `env, gradle.properties, latest tag`. |
+| `clean-ghcr-snapshots.sh` | Deletes old GHCR Docker image snapshots (retains latest N).                  |
 
 ---
 
@@ -320,7 +397,7 @@ All workflows use [`reviewdog`](https://github.com/reviewdog/reviewdog) to annot
 
 Include this in your job’s env:
 
-```yaml
+  ```yaml
 env:
   REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
