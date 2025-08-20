@@ -46,4 +46,4 @@ jobs:
         run: chmod +x .wendara-ci-actions/scripts/*.sh
 
       - name: Run spec verification
-        run: .wendara-ci-actions/scripts/verify-all-specs.sh
+        run: .wendara-ci-actions/scripts/api-first/verify-all-specs.sh

@@ -231,16 +231,16 @@ jobs:
         run: |
           for spec in ${{ needs.detect.outputs.changed_specs }}; do
             echo "Running semantic diff for '$spec'"
-            .wendara-ci-actions/scripts/api-oasdiff-guard.sh origin/main HEAD "$spec"
+            .wendara-ci-actions/scripts/api-first/api-oasdiff-guard.sh origin/main HEAD "$spec"
           done
 
       - name: Generate API changelog (oasdiff)
         # Produces a Markdown changelog per changed API and uploads as artifact.
         run: |
-          chmod +x .wendara-ci-actions/scripts/oasdiff-changelog.sh
+          chmod +x .wendara-ci-actions/scripts/api-first/oasdiff-changelog.sh
           BASE_REF="${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}"
           HEAD_REF="${{ github.sha }}"
-          .wendara-ci-actions/scripts/oasdiff-changelog.sh "$BASE_REF" "$HEAD_REF" CHANGELOG.md
+          .wendara-ci-actions/scripts/api-first/oasdiff-changelog.sh "$BASE_REF" "$HEAD_REF" CHANGELOG.md
 
       - name: Show changelog in logs
         if: always()
@@ -296,7 +296,7 @@ jobs:
             api_dir="$(dirname "$spec")"
             api_name="$(echo "$api_dir" | tr '/' '-')"
             out_html="redoc-previews/${api_name}.html"
-            .wendara-ci-actions/scripts/redoc-build.sh "$spec" "$out_html"
+            .wendara-ci-actions/scripts/api-first/redoc-build.sh "$spec" "$out_html"
             echo "Generated: '$out_html'"
           done
 
