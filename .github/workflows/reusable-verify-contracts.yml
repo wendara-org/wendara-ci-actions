@@ -23,6 +23,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout ci-actions (to get scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: wendara-org/wendara-ci-actions
+          path: .wendara-ci-actions
+          ref: main
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -33,7 +40,8 @@ jobs:
           sudo curl -sSL -o /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
 
+      - name: Make scripts executable
+        run: chmod +x .wendara-ci-actions/scripts/*.sh
+
       - name: Run spec verification
-        run: |
-          chmod +x .wendara-ci-actions/scripts/verify-all-specs.sh
-          .wendara-ci-actions/scripts/verify-all-specs.sh
+        run: .wendara-ci-actions/scripts/verify-all-specs.sh
