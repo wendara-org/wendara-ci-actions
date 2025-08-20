@@ -9,5 +9,7 @@ on:
 jobs:
   placeholder:
     runs-on: ubuntu-latest
+    env:
+      REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - run: echo "Node reusable workflow placeholder"

@@ -86,6 +86,8 @@ jobs:
     # The result is a space-separated list of apis/*/*/*/openapi.yaml.
     name: Detect changed API specs
     runs-on: ubuntu-latest
+    env:
+      REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     outputs:
       changed_specs: ${{ steps.collect.outputs.changed_specs }}
       any_changed: ${{ steps.collect.outputs.any_changed }}
