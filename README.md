@@ -16,6 +16,7 @@ Reusable GitHub Actions **workflows** and **helper scripts** for Wendara’s eng
 - [Conventions & Assumptions](#conventions--assumptions)
 - [Reusable Workflows](#reusable-workflows)
   - [API‑first (`reusable-api-contracts.yml`)](#api-first-reusable-api-contractsyml)
+  - [Contract Validation Only (`reusable-verify-contracts.yml`)](#contract-validation-only-reusable-verify-contractsyml)
   - [Backend (`reusable-backend.yml`)](#backend-reusable-backendyml)
   - [Node Apps (`reusable-node-app.yml`)](#node-apps-reusable-node-appyml)
 - [Helper Scripts](#helper-scripts)
@@ -83,8 +84,8 @@ End‑to‑end automation for OpenAPI contracts: lint → semantic guard → cha
 4. Generates **changelog entries** (MAJOR/MINOR/PATCH).
 5. Optionally builds **Redoc HTML previews** and uploads them as artifacts.
 6. **Publishes only changed APIs**:
-  - on `develop`: **SNAPSHOT** artifacts
-  - on `main`: **stable** artifacts
+- on `develop`: **SNAPSHOT** artifacts
+- on `main`: **stable** artifacts
 7. After stable publish on `main`, opens a **PR main → develop** to keep branches in sync.
 
 **Inputs**
@@ -151,6 +152,44 @@ jobs:
 
 ---
 
+
+### Contract Validation Only (`reusable-verify-contracts.yml`)
+Standalone reusable workflow to **validate all OpenAPI specs** across a repository — regardless of whether they changed — without publishing anything. Useful for PRs and early feedback.
+
+**What it does**
+1. Scans the repo for OpenAPI specs (`openapi.yaml`) using standard layout.
+2. Validates each spec using **Redocly CLI lint**.
+3. Validates that `info.version` exists and follows **semver**.
+4. Annotates PRs with inline errors using **reviewdog**.
+5. Runs on every PR or manually via `workflow_dispatch`. Does **not** publish artifacts.
+
+**Requirements**
+- `REVIEWDOG_GITHUB_API_TOKEN` must be set to `${{ secrets.GITHUB_TOKEN }}` to allow inline annotations.
+- The script `.wendara-ci-actions/scripts/verify-all-specs.sh` must be present and executable.
+- The reusable workflow must `checkout` the `ci-actions` repo to access scripts.
+
+**Consumer example** (`wendara-api-definitions/.github/workflows/verify-contracts.yml`):
+
+```yaml
+name: Verify All Contracts
+
+on:
+  pull_request:
+    branches: [ develop, main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  verify:
+    uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-verify-contracts.yml@main
+    with:
+      node_version: "20"
+```
+
+
 ### Backend (`reusable-backend.yml`)
 CI for Java 21 + Gradle + Spring Boot with quality gates and **Jib** image build.
 
@@ -174,6 +213,29 @@ CI for React / Next.js / React Native (TypeScript by default).
 - **`scripts/redoc-build.sh`** — Builds a static Redoc HTML from a given `openapi.yaml`. Respects the consumer repo’s `.redocly.yaml`.
 - **`scripts/gradle-quality.sh`** — Aggregates Java quality checks and test coverage.
 - **`scripts/node-quality.sh`** — Aggregates Node/TS checks and tests.
+
+---
+
+## Reviewdog & PR annotations
+
+All reusable workflows and scripts that perform quality checks use [`reviewdog`](https://github.com/reviewdog/reviewdog) with:
+
+```yaml
+-reporter=github-pr-check
+```
+
+This means:
+
+- Any linting or semantic error will appear directly in the GitHub PR UI as inline annotations.
+- It requires the following job-level environment variable:
+
+```yaml
+env:
+  REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+> Already included in `reusable-api-contracts.yml`, `reusable-verify-contracts.yml`, and all helper scripts (`verify-all-specs.sh`, `gradle-quality.sh`, `node-quality.sh`).
+
 
 ---
 

@@ -28,7 +28,7 @@ for spec in $SPECS; do
       -name="Redocly Lint" \
       -reporter=github-pr-check \
       -level=error \
-      -fail-on-error=true
+      -fail-level=error
 done
 
 # Check info.version explicitly
@@ -40,7 +40,7 @@ for spec in $SPECS; do
       -name="Version Check" \
       -reporter=github-pr-check \
       -level=error \
-      -fail-on-error=true
+      -fail-level=error
   fi
 done
 
