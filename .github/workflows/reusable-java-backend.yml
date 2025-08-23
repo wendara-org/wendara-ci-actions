@@ -96,7 +96,7 @@ jobs:
         id: ver
         env:
           RELEASE_CHANNEL: ${{ inputs.release-channel }}
-        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT
+        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
       - name: Validate VERSION
         run: |
           if [ -z "${{ steps.ver.outputs.version }}" ]; then
@@ -122,7 +122,7 @@ jobs:
         id: ver
         env:
           RELEASE_CHANNEL: ${{ inputs.release-channel }}
-        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT
+        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
       - name: Validate VERSION
         run: |
           if [ -z "${{ steps.ver.outputs.version }}" ]; then
@@ -149,7 +149,7 @@ jobs:
         id: ver
         env:
           RELEASE_CHANNEL: ${{ inputs.release-channel }}
-        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT
+        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
       - name: Validate VERSION
         run: |
           if [ -z "${{ steps.ver.outputs.version }}" ]; then
