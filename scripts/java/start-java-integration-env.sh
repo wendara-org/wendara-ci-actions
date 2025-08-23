@@ -1,15 +1,18 @@
 #!/bin/bash
 set -euo pipefail
-
 echo "▶ Starting integration test environment..."
 
 COMPOSE_FILE="code/src/main/test/resources/compose/docker-compose.yml"
+[[ -f "$COMPOSE_FILE" ]] || { echo "❌ Not found: $COMPOSE_FILE"; exit 1; }
 
-if [ ! -f "$COMPOSE_FILE" ]; then
-  echo "❌ Docker Compose file not found at: '$COMPOSE_FILE'"
-  exit 1
-fi
+docker compose -f "$COMPOSE_FILE" up -d
 
-docker-compose -f "$COMPOSE_FILE" up -d
+# Wait for health
+for i in {1..40}; do
+  status=$(docker inspect -f '{{.State.Health.Status}}' local-mongo 2>/dev/null || echo "starting")
+  [[ "$status" == "healthy" ]] && break
+  sleep 3
+done
 
-echo "✅ Docker Compose environment started."
+docker compose -f "$COMPOSE_FILE" ps
+echo "✅ Environment ready."

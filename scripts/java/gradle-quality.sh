@@ -21,8 +21,4 @@ echo "🧹 Running PMD..."
 echo "🐞 Running SpotBugs..."
 ./gradlew spotbugsMain spotbugsTest --no-daemon
 
-# JaCoCo coverage (only for unit tests)
-echo "📊 Generating JaCoCo coverage report..."
-./gradlew jacocoTestReport --no-daemon
-
 echo "✅ Quality checks completed successfully."
