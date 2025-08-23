@@ -72,6 +72,10 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Run semantic-release
         run: |
           if [ "${{ inputs.release-channel }}" = "main" ]; then
@@ -88,6 +92,8 @@ jobs:
     if: ${{ success() && (inputs.release-channel == 'develop' || inputs.release-channel == 'main') }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -118,6 +124,8 @@ jobs:
     if: ${{ success() && inputs.release-channel == 'develop' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Resolve VERSION
         id: ver
         env:
@@ -189,7 +197,7 @@ jobs:
           out: "reports"
 
       - name: Upload OWASP Report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: owasp-report
           path: reports
