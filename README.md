@@ -51,30 +51,31 @@ wendara-ci-actions/
 ├─ .commitlintrc.json
 ├─ README.md
 ├─ scripts/
-│  ├─ clean-ghcr-snapshots.sh            # Clean old GHCR snapshot versions
-│  ├─ read-version.sh                    # Resolve semantic-release version
+│  ├─ clean-ghcr-snapshots.sh              # Clean old GHCR snapshot versions
+│  ├─ read-version.sh                      # Resolve version (env → code/gradle.properties → latest tag)
+│  ├─ bump-gradle-version.sh               # Update code/gradle.properties (used by semantic-release)
 │  ├─ api-first/
-│  │  ├─ api-oasdiff-guard.sh            # OpenAPI semantic diff guard
-│  │  ├─ oasdiff-changelog.sh            # Generate changelog entries from diff
-│  │  ├─ redoc-build.sh                  # Build Redoc preview from spec
-│  │  └─ verify-all-specs.sh             # Validate all specs in repo
+│  │  ├─ api-oasdiff-guard.sh              # OpenAPI semantic diff guard
+│  │  ├─ oasdiff-changelog.sh              # Generate changelog entries from diff
+│  │  ├─ redoc-build.sh                    # Build Redoc preview from spec
+│  │  └─ verify-all-specs.sh               # Validate all specs in repo
 │  ├─ java/
-│  │  ├─ gradle-quality.sh               # checkstyle, pmd, spotbugs, jacoco
-│  │  ├─ run-java-unit-tests.sh          # Run unit tests
-│  │  ├─ start-java-integration-env.sh   # Start docker compose env
-│  │  ├─ run-java-integration-tests.sh   # Run integration tests
-│  │  └─ stop-java-integration-env.sh    # Stop docker compose env
+│  │  ├─ gradle-quality.sh                 # checkstyle, pmd, spotbugs (no tests here)
+│  │  ├─ run-java-unit-tests.sh            # Run unit tests + coverage (Jacoco)
+│  │  ├─ start-java-integration-env.sh     # Start Docker Compose (Mongo pinned + healthcheck)
+│  │  ├─ run-java-integration-tests.sh     # Run integration tests
+│  │  └─ stop-java-integration-env.sh      # Stop Docker Compose
 │  └─ node/
-│     └─ node-quality.sh                 # tsc --noEmit, eslint, tests
-│     └─ build-node-app.sh               # build production application
-│     └─ run-node-unit-test.sh           # run unit tests
+│     ├─ node-quality.sh                   # tsc --noEmit, eslint, tests
+│     ├─ build-node-app.sh                 # Build production app
+│     └─ run-node-unit-test.sh             # Run unit tests
 └─ .github/
    └─ workflows/
-      ├─ reusable-api-contracts.yml       # API-first validation and publish
-      ├─ reusable-verify-contracts.yml    # Validate all OpenAPI specs
-      ├─ reusable-backend.yml             # Backend CI (Gradle, tests, release)
-      ├─ reusable-node-app.yml            # Node CI (TS, ESLint, tests)
-      └─ reusable-manual-post-release.yml # Manual rerun of docker/sync after release
+      ├─ reusable-api-contracts.yml
+      ├─ reusable-verify-contracts.yml
+      ├─ reusable-backend.yml              # Java backend CI (Gradle, tests, semantic-release, Jib)
+      ├─ reusable-node-app.yml
+      └─ reusable-manual-post-release.yml
 ```
 
 ---
@@ -227,14 +228,15 @@ End‑to‑end CI pipeline for Java 21 + Gradle + Spring Boot with quality check
 
 **What it does**
 
-1. Runs Java quality gates: `checkstyle`, `pmd`, `spotbugs`, and `jacoco` coverage.
-2. Executes **unit tests** and **integration tests** using Docker Compose.
-3. Uses **semantic-release** to resolve the version and auto-tag commits.
-4. Builds and pushes a **Docker image** using **Jib**, versioned with the release.
-5. On `develop`: keeps **SNAPSHOT** Docker images.
-6. On `main`: publishes **stable** Docker images and creates a **sync PR** to `develop`.
-7. Runs an **OWASP Dependency Check** on `main` after release.
-8. Cleans up old GHCR **snapshot** images to save space.
+1. Runs Java quality gates (static): `checkstyle`, `pmd` and `spotbugs`
+2. Executes **unit tests** + **coverage** and generates **Jacoco Coverage Report**.
+3. **integration tests** brings up Docker Compose, runs ITs, and tears down.
+4. Uses **semantic-release** to resolve the version and auto-tag commits.
+5. Builds and pushes a **Docker image** using **Jib**, versioned with the release.
+6. On `develop`: keeps **SNAPSHOT** Docker images.
+7. On `main`: publishes **stable** Docker images and creates a **sync PR** to `develop`.
+8. Runs an **OWASP Dependency Check** on `main` after release.
+9. Cleans up old GHCR **snapshot** images to save space.
 
 **Inputs**
 
@@ -251,16 +253,16 @@ End‑to‑end CI pipeline for Java 21 + Gradle + Spring Boot with quality check
 
 **Jobs**
 
-| Job                 | Description                                                          |
-|---------------------|----------------------------------------------------------------------|
-| `quality-checks`    | Runs code quality tools (`checkstyle`, `pmd`, `spotbugs`, `jacoco`). |
-| `unit-tests`        | Runs unit tests.                                                     |
-| `integration-tests` | Starts Docker Compose env, runs integration tests, and stops it.     |
-| `release`           | Runs `semantic-release` to resolve version and tag commits.          |
-| `docker`            | Builds and pushes Docker image via Jib. Requires valid version.      |
-| `clean-snapshots`   | Removes old snapshot Docker tags, keeping the latest N.              |
-| `sync-pr`           | On `main`, creates PR to sync changes back to `develop`.             |
-| `owasp-check`       | Runs OWASP Dependency Check after stable release (`main` only).      |
+| Job                 | Description                                                      |
+|---------------------|------------------------------------------------------------------|
+| `quality-checks`    | Runs static analysis only (`checkstyle`, `pmd`, `spotbugs`).     |
+| `unit-tests`        | Runs unit tests and generates Jacoco coverage.                   |
+| `integration-tests` | Starts Docker Compose env, runs integration tests, and stops it. |
+| `release`           | Runs `semantic-release` to resolve version and tag commits.      |
+| `docker`            | Builds and pushes Docker image via Jib. Requires valid version.  |
+| `clean-snapshots`   | Removes old snapshot Docker tags, keeping the latest N.          |
+| `sync-pr`           | On `main`, creates PR to sync changes back to `develop`.         |
+| `owasp-check`       | Runs OWASP Dependency Check after stable release (`main` only).  |
 
 **Example usage** (`wendara-backend/.github/workflows/ci.yml`):
 
@@ -366,13 +368,13 @@ All helper scripts are located under `scripts/` and grouped by domain:
 
 ### Java (`scripts/java/`)
 
-| Script                          | Purpose                                                           |
-|---------------------------------|-------------------------------------------------------------------|
-| `gradle-quality.sh`             | Runs `checkstyle`, `pmd`, `spotbugs`, and `jacoco` test coverage. |
-| `run-java-unit-tests.sh`        | Executes unit tests via Gradle.                                   |
-| `start-java-integration-env.sh` | Starts integration test environment (e.g. Docker Compose).        |
-| `run-java-integration-tests.sh` | Runs integration tests.                                           |
-| `stop-java-integration-env.sh`  | Tears down integration test environment.                          |
+| Script                          | Purpose                                                    |
+|---------------------------------|------------------------------------------------------------|
+| `gradle-quality.sh`             | Runs `checkstyle`, `pmd` and `spotbugs`                    |
+| `run-java-unit-tests.sh`        | Executes unit tests via Gradle.                            |
+| `start-java-integration-env.sh` | Starts integration test environment (e.g. Docker Compose). |
+| `run-java-integration-tests.sh` | Runs integration tests.                                    |
+| `stop-java-integration-env.sh`  | Tears down integration test environment.                   |
 
 ### Node (`scripts/node/`)
 
@@ -384,10 +386,11 @@ All helper scripts are located under `scripts/` and grouped by domain:
 
 ### Utilities (`scripts/`)
 
-| Script                    | Purpose                                                                      |
-|---------------------------|------------------------------------------------------------------------------|
-| `read-version.sh`         | Reads the current release version from `env, gradle.properties, latest tag`. |
-| `clean-ghcr-snapshots.sh` | Deletes old GHCR Docker image snapshots (retains latest N).                  |
+| Script                    | Purpose                                                                                           |
+|---------------------------|---------------------------------------------------------------------------------------------------|
+| `read-version.sh`         | Reads the current release version from `env, code/gradle.properties, latest tag` (in that order). |
+| `bump-gradle-version.sh`  | Writes a version string to `code/gradle.properties` and optionally commits the change.            |
+| `clean-ghcr-snapshots.sh` | Deletes old GHCR Docker image snapshots (retains latest N).                                       |
 
 ---
 
@@ -422,12 +425,55 @@ env:
 
 ## How Versioning, Publishing & Changelog Work in Java Backend
 
-- `semantic-release` runs on every push to `main` or `develop`
-- `main` produces stable version (`1.0.0`), `develop` produces snapshot (`1.0.0-SNAPSHOT`)
-- If version is valid, release is committed and pushed
-- Docker image uses the resolved version
-- Snapshot cleanup deletes older GHCR versions except latest N
-- Sync PR created from `main` to `develop` to align branches
+**Repo layout (assumed):**
+
+* Gradle project under `code/` (`code/build.gradle.kts`, `code/gradle.properties` with `version = ...`).
+* Changelog under `docs/CHANGELOG.md`.
+* `package.json` (and optional `.releaserc*.json`) at the **repo root** (siblings of `code/` and `docs/`).
+
+**Branch behavior (semantic-release at repo root, Node 20/21):**
+
+* **develop** → computes a **pre-release** (e.g., `v1.2.0-develop.1`).
+  ➜ Does **not** modify `code/gradle.properties` or `docs/CHANGELOG.md`.
+  ➜ Publishes a GitHub pre-release (tag only, no changelog commit).
+* **main** → computes a **stable** release (e.g., `v1.2.0`).
+  ➜ Updates **`code/gradle.properties`** (via `scripts/bump-gradle-version.sh`).
+  ➜ Updates **`docs/CHANGELOG.md`**, creates **tag** and **GitHub Release**.
+  ➜ Triggers **sync PR** (main → develop).
+
+**How downstream jobs resolve the version** (`scripts/read-version.sh`):
+
+1. `VERSION` env var (if provided by the workflow/step).
+2. `code/gradle.properties` (`version = ...`) — source of truth on **main**.
+3. Latest Git tag (leading `v` stripped) — used for **develop** pre-releases.
+
+> Tip: pass the channel to the resolver so it prefers tags on `develop`:
+
+```yaml
+- uses: actions/checkout@v4
+  with: { fetch-depth: 0 } # ensure tags are available
+- name: Resolve VERSION
+  id: ver
+  env:
+    RELEASE_CHANNEL: ${{ inputs.release-channel }}  # "develop" or "main"
+  run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
+```
+
+**Where the Gradle bump happens (main only):**
+
+* `@semantic-release/exec` runs `scripts/bump-gradle-version.sh ${nextRelease.version}` during **prepare** on `main`.
+* `@semantic-release/changelog` updates `docs/CHANGELOG.md`.
+* `@semantic-release/git` commits both files; `@semantic-release/github` creates the Release.
+
+**Docker/Jib:**
+
+* The `docker` job uses the resolved version (from the step above) and runs:
+
+  ```bash
+  ./gradlew jib --no-daemon -Pversion="${{ steps.ver.outputs.version }}"
+  ```
+
+  Images are pushed to GHCR and tagged with the computed version (pre-release on `develop`, stable on `main`).
 
 ---
 
@@ -478,15 +524,18 @@ Use `@main` while iterating, and switch to tag or SHA for production stability.
 
 ---
 
-## Troubleshooting
-
-| Problem                          | Solution                                                                                                                                       |
-|----------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Diff guard fails**             | Bump **major** (`v1` → `v2`) and/or increase `info.version` appropriately, then re‑run.                                                        |
-| **Redoc artifact missing**       | Ensure `run_redoc: true` and a valid `.redocly.yaml` in the consumer repo root.                                                                |
-| **Nothing published**            | Check `publish_enabled`, verify that `openapi.yaml` (or per‑API `metadata.yml`) actually changed and that the API is whitelisted (if enabled). |
-| **Changelog not generated**      | Ensure you are using **Conventional Commits** and that `oasdiff changelog` ran successfully.                                                   |
-| **Sync PR not created**          | Happens if no commits landed in `main`                                                                                                         |
-| **Version empty in docker step** | Ensure `semantic-release` ran successfully                                                                                                     |
-| **OWASP step skipped**           | Runs only on `main`, after release, and only if version was found                                                                              |
-| **Image not pushed (backend)**   | Confirm `run_jib: true`, `image_name` set, and registry secrets configured.                                                                    |
+| Problem                              | Solution                                                                                                                                       |
+|--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Diff guard fails (API)**           | Bump **major** (`v1` → `v2`) and/or increase `info.version` appropriately, then re-run.                                                        |
+| **Redoc artifact missing (API)**     | Ensure `run_redoc: true` and a valid `.redocly.yaml` in the consumer repo root.                                                                |
+| **Nothing published (API)**          | Check `publish_enabled`; verify the spec actually changed and that the API is whitelisted (if enabled).                                        |
+| **Changelog not generated (API)**    | Ensure you use **Conventional Commits** and that the changelog step ran successfully.                                                          |
+| **Coverage ran twice**               | By design, coverage now runs **only** in `unit-tests`. `quality-checks` is **static-only** (Checkstyle/PMD/SpotBugs).                          |
+| **Compose up but ITs flaky**         | Pin Mongo image (e.g., `mongo:7.0`) and add a **healthcheck**; wait for **healthy** before running ITs.                                        |
+| **Version empty in docker step**     | Ensure the `release` job completed, `actions/checkout` used `fetch-depth: 0`, and `read-version.sh` can see `code/gradle.properties` or a tag. |
+| **Changelog not updated on develop** | Intentional. Only **main** updates `docs/CHANGELOG.md` and creates a GitHub Release.                                                           |
+| **OWASP step skipped**               | Runs only on **main**, after release, and only if a version was resolved (report-only).                                                        |
+| **Sync PR not created**              | Happens if no new commits landed on `main` or the release did not produce a new tag.                                                           |
+| **Gradle version not bumped (main)** | Check `scripts/bump-gradle-version.sh` exists and is executable; verify `@semantic-release/exec` is configured in the **main** config.         |
+| **Git tags not found**               | Use `actions/checkout@v4` with `fetch-depth: 0` (or fetch tags before calling `read-version.sh`).                                              |
+| **Image not pushed (backend)**       | Confirm GHCR login, `packages: write` permission, and Jib params (`-Pversion=...`) are set correctly.                                          |

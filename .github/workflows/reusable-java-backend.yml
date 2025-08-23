@@ -63,15 +63,22 @@ jobs:
   release:
     runs-on: ubuntu-latest
     if: ${{ inputs.release-channel == 'develop' || inputs.release-channel == 'main' }}
-    needs: [unit-tests, integration-tests]
+    needs: [ unit-tests, integration-tests ]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
       - run: npm ci
       - name: Run semantic-release
-        run: npx semantic-release
+        run: |
+          if [ "${{ inputs.release-channel }}" = "main" ]; then
+            npm run release:main
+          else
+            npm run release:develop
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -87,7 +94,9 @@ jobs:
           java-version: 21
       - name: Resolve VERSION
         id: ver
-        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_CHANNEL: ${{ inputs.release-channel }}
+        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT
       - name: Validate VERSION
         run: |
           if [ -z "${{ steps.ver.outputs.version }}" ]; then
@@ -111,7 +120,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Resolve VERSION
         id: ver
-        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_CHANNEL: ${{ inputs.release-channel }}
+        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT
       - name: Validate VERSION
         run: |
           if [ -z "${{ steps.ver.outputs.version }}" ]; then
@@ -136,7 +147,9 @@ jobs:
           fetch-depth: 0
       - name: Resolve VERSION
         id: ver
-        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_CHANNEL: ${{ inputs.release-channel }}
+        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT
       - name: Validate VERSION
         run: |
           if [ -z "${{ steps.ver.outputs.version }}" ]; then
