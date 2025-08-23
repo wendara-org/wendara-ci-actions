@@ -44,7 +44,7 @@ jobs:
 
       - name: Verify requested channel matches the current branch
         run: |
-          # Derive current branch ref
+          # Ensure we are running on the requested branch (develop|main).
           REF_NAME="${GITHUB_REF##*/}"
           REQ="${{ inputs.channel }}"
           echo "Current ref: $REF_NAME | Requested channel: $REQ"
@@ -56,6 +56,8 @@ jobs:
 
       - name: Resolve VERSION (must exist)
         id: ver
+        env:
+          RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
           chmod +x ./scripts/read-version.sh
           V="$(./scripts/read-version.sh || true)"
@@ -69,7 +71,7 @@ jobs:
       - name: Require exact tag on main (guards against misuse)
         if: ${{ inputs.channel == 'main' }}
         run: |
-          # On main, require that HEAD is exactly at a release tag (semantic-release behavior)
+          # On main, HEAD must be exactly at a release tag (semantic-release behavior).
           if ! git describe --tags --exact-match >/dev/null 2>&1; then
             echo "❌ HEAD is not at a release tag. Aborting."
             exit 1
@@ -90,6 +92,8 @@ jobs:
 
       - name: Resolve VERSION
         id: ver
+        env:
+          RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
           chmod +x ./scripts/read-version.sh
           V="$(./scripts/read-version.sh)"
@@ -124,6 +128,8 @@ jobs:
           fetch-depth: 0
       - name: Resolve VERSION
         id: ver
+        env:
+          RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
           chmod +x ./scripts/read-version.sh
           V="$(./scripts/read-version.sh)"
@@ -157,6 +163,8 @@ jobs:
 
       - name: Resolve VERSION
         id: ver
+        env:
+          RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
           chmod +x ./scripts/read-version.sh
           V="$(./scripts/read-version.sh)"
