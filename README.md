@@ -16,13 +16,14 @@ Reusable GitHub Actions **workflows** and **helper scripts** for Wendara’s eng
 - [Folder Structure](#folder-structure)
 - [Conventions & Assumptions](#conventions--assumptions)
 - [Reusable Workflows](#reusable-workflows)
-  - [API‑first (`reusable-api-contracts.yml`)](#api-first-reusable-api-contractsyml)
+  - [API‑first (`reusable-api-contracts.yml`)](#apifirst-reusable-api-contractsyml)
   - [Contract Validation Only (`reusable-verify-contracts.yml`)](#contract-validation-only-reusable-verify-contractsyml)
-  - [Backend (`reusable-backend.yml`)](#backend-reusable-backendyml)
+  - [Java Backend (`reusable-java-backend.yml`)](#java-backend-reusable-java-backendyml)
   - [Node Apps (`reusable-node-app.yml`)](#node-apps-reusable-node-appyml)
 - [Helper Scripts](#helper-scripts)
 - [Reviewdog & PR annotations](#reviewdog--pr-annotations)
-- [How Versioning, Publishing & Changelog Work](#how-versioning-publishing--changelog-work)
+- [API First - How Versioning, Publishing & Changelog Work](#how-versioning-publishing--changelog-work-in-api-first)
+- [Backend - How Versioning, Publishing & Changelog Work](#how-versioning-publishing--changelog-work-in-java-backend)
 - [Post‑release Sync (main → develop)](#postrelease-sync-main--develop)
 - [Redoc Previews](#redoc-previews)
 - [Using These Workflows Across Repos](#using-these-workflows-across-repos)
@@ -222,7 +223,7 @@ jobs:
 
 ---
 
-### Backend (`reusable-backend.yml`)
+### Java Backend (`reusable-java-backend.yml`)
 
 End‑to‑end CI pipeline for Java 21 + Gradle + Spring Boot with quality checks, image publishing and sync PR.
 
@@ -283,7 +284,7 @@ permissions:
 
 jobs:
   backend:
-    uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-backend.yml@main
+    uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-java-backend.yml@main
     with:
       release-channel: ${{ github.ref_name }}
       package-name: wendara-backend
@@ -524,6 +525,7 @@ Use `@main` while iterating, and switch to tag or SHA for production stability.
 
 ---
 
+## Troubleshooting
 | Problem                              | Solution                                                                                                                                       |
 |--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Diff guard fails (API)**           | Bump **major** (`v1` → `v2`) and/or increase `info.version` appropriately, then re-run.                                                        |
