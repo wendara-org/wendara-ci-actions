@@ -57,7 +57,7 @@ jobs:
         run: npm ci
 
       - name: Run unit tests
-        run: ./scripts/node/run-node-unit-tests.sh
+        run: .wendara-ci-actions/scripts/node/run-node-unit-tests.sh
 
   build:
     name: Production build
@@ -76,4 +76,4 @@ jobs:
         run: npm ci
 
       - name: Run production build
-        run: ./scripts/node/build-node-app.sh
+        run: .wendara-ci-actions/scripts/node/build-node-app.sh

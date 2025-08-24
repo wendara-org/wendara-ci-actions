@@ -26,7 +26,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: 21
-      - run: ./scripts/java/gradle-quality.sh
+      - run: .wendara-ci-actions/scripts/java/gradle-quality.sh
 
   unit-tests:
     runs-on: ubuntu-latest
@@ -39,7 +39,7 @@ jobs:
           java-version: 21
           cache: 'gradle'
       - run: chmod +x scripts/java/*.sh
-      - run: ./scripts/java/run-java-unit-tests.sh
+      - run: .wendara-ci-actions/scripts/java/run-java-unit-tests.sh
       - run: ./gradlew jacocoTestReport --no-daemon
       - uses: actions/upload-artifact@v4
         with:
@@ -55,10 +55,10 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: 21
-      - run: ./scripts/java/start-java-integration-env.sh
-      - run: ./scripts/java/run-java-integration-tests.sh
+      - run: .wendara-ci-actions/scripts/java/start-java-integration-env.sh
+      - run: .wendara-ci-actions/scripts/java/run-java-integration-tests.sh
       - if: always()
-        run: ./scripts/java/stop-java-integration-env.sh
+        run: .wendara-ci-actions/scripts/java/stop-java-integration-env.sh
 
   release:
     runs-on: ubuntu-latest
@@ -102,7 +102,7 @@ jobs:
         id: ver
         env:
           RELEASE_CHANNEL: ${{ inputs.release-channel }}
-        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(.wendara-ci-actions/scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
       - name: Validate VERSION
         run: |
           if [ -z "${{ steps.ver.outputs.version }}" ]; then
@@ -130,7 +130,7 @@ jobs:
         id: ver
         env:
           RELEASE_CHANNEL: ${{ inputs.release-channel }}
-        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(.wendara-ci-actions/scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
       - name: Validate VERSION
         run: |
           if [ -z "${{ steps.ver.outputs.version }}" ]; then
@@ -138,7 +138,7 @@ jobs:
             exit 1
           fi
       - name: Clean old GHCR snapshots
-        run: ./scripts/clean-ghcr-snapshots.sh
+        run: .wendara-ci-actions/scripts/clean-ghcr-snapshots.sh
         env:
           GH_OWNER: ${{ github.repository_owner }}
           PACKAGE_NAME: ${{ inputs['package-name'] }}
@@ -157,7 +157,7 @@ jobs:
         id: ver
         env:
           RELEASE_CHANNEL: ${{ inputs.release-channel }}
-        run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(.wendara-ci-actions/scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
       - name: Validate VERSION
         run: |
           if [ -z "${{ steps.ver.outputs.version }}" ]; then

@@ -59,8 +59,8 @@ jobs:
         env:
           RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
-          chmod +x ./scripts/read-version.sh
-          V="$(./scripts/read-version.sh || true)"
+          chmod +x .wendara-ci-actions/scripts/read-version.sh
+          V="$(.wendara-ci-actions/scripts/read-version.sh || true)"
           echo "version=$V" >> "$GITHUB_OUTPUT"
           if [ -z "$V" ]; then
             echo "❌ VERSION could not be resolved (env/gradle.properties/tag)."
@@ -95,8 +95,8 @@ jobs:
         env:
           RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
-          chmod +x ./scripts/read-version.sh
-          V="$(./scripts/read-version.sh)"
+          chmod +x .wendara-ci-actions/scripts/read-version.sh
+          V="$(.wendara-ci-actions/scripts/read-version.sh)"
           echo "VERSION=$V" >> $GITHUB_ENV
           echo "Resolved VERSION=$V"
 
@@ -131,8 +131,8 @@ jobs:
         env:
           RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
-          chmod +x ./scripts/read-version.sh
-          V="$(./scripts/read-version.sh)"
+          chmod +x .wendara-ci-actions/scripts/read-version.sh
+          V="$(.wendara-ci-actions/scripts/read-version.sh)"
           echo "VERSION=$V" >> $GITHUB_ENV
           echo "Resolved VERSION=$V"
 
@@ -144,7 +144,7 @@ jobs:
           fi
 
       - name: Clean snapshots in GHCR
-        run: ./scripts/clean-ghcr-snapshots.sh
+        run: .wendara-ci-actions/scripts/clean-ghcr-snapshots.sh
         env:
           GH_OWNER: ${{ github.repository_owner }}
           PACKAGE_NAME: ${{ inputs['package-name'] }}
@@ -166,8 +166,8 @@ jobs:
         env:
           RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
-          chmod +x ./scripts/read-version.sh
-          V="$(./scripts/read-version.sh)"
+          chmod +x .wendara-ci-actions/scripts/read-version.sh
+          V="$(.wendara-ci-actions/scripts/read-version.sh)"
           echo "VERSION=$V" >> $GITHUB_ENV
           echo "Resolved VERSION=$V"
 
