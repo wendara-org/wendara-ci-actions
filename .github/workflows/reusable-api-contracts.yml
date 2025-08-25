@@ -26,11 +26,28 @@
 #     (optional) per-API metadata.yml next to each spec
 #     (optional) root metadata.yml at repo root (as a whitelist index)
 #     (optional) .redocly.yaml at repo root
-# - This repo (wendara-ci-actions) provides helper scripts under ./scripts:
-#     - api-oasdiff-guard.sh
-#     - redoc-build.sh
-#     - oasdiff-changelog.sh   (you should include this script in this repo)
+# - All helper scripts are available under the scripts/ directory in this repository.
+# - External dependencies required by some scripts:
+#     - oasdiff (CLI binary, installed in the runner)
+#     - yq (mikefarah, for YAML parsing)
+#     - reviewdog (for PR annotations)
 #
+# Usage Example:
+#   To call this workflow from another repo, use workflow_call and provide the required inputs/secrets.
+#   All scripts are invoked using their relative path from the repo root, e.g.:
+#     scripts/api-first/api-oasdiff-guard.sh origin/main HEAD apis/emotion-journal/openapi.yaml
+#     scripts/api-first/redoc-build.sh <spec> <output.html>
+#
+# Jobs Overview:
+#   - detect: Detects changed OpenAPI specs and metadata.
+#   - validate: Lints specs and checks Conventional Commits.
+#   - guard: Enforces semantic versioning using oasdiff.
+#   - redoc: Optionally builds Redoc HTML previews for changed specs.
+#   - publish: Publishes changed specs as Maven artifacts (if enabled).
+#   - sync: After stable publish, opens a PR to sync main → develop.
+#
+# For more details, see the README.md in this repository
+
 name: Reusable · API Contracts
 
 on:
