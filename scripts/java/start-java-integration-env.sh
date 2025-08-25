@@ -2,7 +2,7 @@
 set -euo pipefail
 echo "▶ Starting integration test environment..."
 
-COMPOSE_FILE="code/src/test/resources/compose/docker-compose.yml"
+COMPOSE_FILE="${COMPOSE_FILE:-code/src/test/resources/compose/docker-compose.yml}"
 SERVICE_NAME="local-mongo"
 [[ -f "$COMPOSE_FILE" ]] || { echo "❌ Not found: '$COMPOSE_FILE'"; exit 1; }
 

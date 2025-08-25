@@ -3,7 +3,7 @@ set -euo pipefail
 
 echo "🧹 Stopping integration test environment..."
 
-COMPOSE_FILE="code/src/test/resources/compose/docker-compose.yml"
+COMPOSE_FILE="${COMPOSE_FILE:-code/src/test/resources/compose/docker-compose.yml}"
 
 if [ ! -f "$COMPOSE_FILE" ]; then
   echo "⚠️ Docker Compose file not found. Nothing to stop."
