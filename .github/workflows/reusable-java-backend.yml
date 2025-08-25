@@ -60,10 +60,6 @@ permissions:
   packages: write
   pull-requests: write
 
-env:
-  PROJECT_DIR: code
-  GRADLEW: ./code/gradlew
-
 jobs:
 
   quality-checks:
@@ -72,8 +68,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
 
       - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
@@ -89,9 +84,8 @@ jobs:
           java-version: 21
 
       - name: Run quality suite
-        env:
-          GRADLEW: ${{ env.GRADLEW }}
-        run: .wendara-ci-actions/scripts/java/gradle-quality.sh
+        working-directory: code
+        run: ../.wendara-ci-actions/scripts/java/gradle-quality.sh
 
   unit-tests:
     name: Unit tests + JaCoCo
@@ -100,8 +94,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
 
       - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
@@ -119,21 +112,21 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
-          cache-dependency-path: ${{ env.PROJECT_DIR }}/**/*.kts
+          cache-dependency-path: code/**/*.kts
 
       - name: Run unit tests
-        env:
-          GRADLEW: ${{ env.GRADLEW }}
-        run: .wendara-ci-actions/scripts/java/run-java-unit-tests.sh
+        working-directory: code
+        run: ../.wendara-ci-actions/scripts/java/run-java-unit-tests.sh
 
       - name: Generate JaCoCo report
-        run: $GRADLEW jacocoTestReport --no-daemon
+        working-directory: code
+        run: ./gradlew jacocoTestReport --no-daemon
 
       - name: Upload JaCoCo HTML
         uses: actions/upload-artifact@v4
         with:
           name: jacoco-report
-          path: '**/build/reports/jacoco/test/html'
+          path: code/**/build/reports/jacoco/test/html
 
   integration-tests:
     name: Integration tests
@@ -142,8 +135,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
 
       - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
@@ -162,27 +154,31 @@ jobs:
           java-version: 21
 
       - name: Start integration environment
-        run: .wendara-ci-actions/scripts/java/start-java-integration-env.sh
+        working-directory: code
+        env:
+          COMPOSE_FILE: src/test/resources/compose/docker-compose.yml
+        run: ../.wendara-ci-actions/scripts/java/start-java-integration-env.sh
 
       - name: Run integration tests
-        env:
-          GRADLEW: ${{ env.GRADLEW }}
-        run: .wendara-ci-actions/scripts/java/run-java-integration-tests.sh
+        working-directory: code
+        run: ../.wendara-ci-actions/scripts/java/run-java-integration-tests.sh
 
       - name: Stop integration environment
         if: always()
-        run: .wendara-ci-actions/scripts/java/stop-java-integration-env.sh
+        working-directory: code
+        env:
+          COMPOSE_FILE: src/test/resources/compose/docker-compose.yml
+        run: ../.wendara-ci-actions/scripts/java/stop-java-integration-env.sh
 
   release:
     name: Semantic release (tags/releases)
     runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests]
+    needs: [ unit-tests, integration-tests ]
     if: ${{ inputs.release-channel == 'develop' || inputs.release-channel == 'main' }}
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -215,8 +211,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
 
       - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
@@ -253,7 +248,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build & push with Jib
-        run: $GRADLEW jib --no-daemon -Pversion="${{ steps.ver.outputs.version }}"
+        working-directory: code
+        run: ./gradlew jib --no-daemon -Pversion="${{ steps.ver.outputs.version }}"
 
   clean-snapshots:
     name: Clean old GHCR snapshots
@@ -263,8 +259,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
 
       - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
@@ -303,8 +298,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
 
       - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
@@ -346,8 +340,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
 
       - name: Set up Java
         uses: actions/setup-java@v4

@@ -35,7 +35,6 @@ permissions:
 
 env:
   PROJECT_DIR: code
-  GRADLEW: ./code/gradlew
 
 jobs:
 
@@ -45,8 +44,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
 
       - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
@@ -70,9 +68,9 @@ jobs:
         env:
           RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
-          chmod +x .wendara-ci-actions/scripts/read-version.sh
           V="$(.wendara-ci-actions/scripts/read-version.sh || true)"
           echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$V" >> "$GITHUB_ENV"
           if [ -z "$V" ]; then
             echo "❌ VERSION could not be resolved (env/gradle.properties/tag)."
             exit 1
@@ -82,7 +80,6 @@ jobs:
       - name: Require exact tag on main (guards against misuse)
         if: ${{ inputs.channel == 'main' }}
         run: |
-          # On main, HEAD must be exactly at a release tag (semantic-release behavior).
           if ! git describe --tags --exact-match >/dev/null 2>&1; then
             echo "❌ HEAD is not at a release tag. Aborting."
             exit 1
@@ -95,15 +92,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
-        with:
-          repository: wendara-org/wendara-ci-actions
-          path: .wendara-ci-actions
-          ref: main
+        with: { fetch-depth: 0 }
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -111,22 +100,15 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Resolve VERSION
-        id: ver
-        env:
-          RELEASE_CHANNEL: ${{ inputs.channel }}
-        run: |
-          chmod +x .wendara-ci-actions/scripts/read-version.sh
-          V="$(.wendara-ci-actions/scripts/read-version.sh)"
-          echo "VERSION=$V" >> $GITHUB_ENV
-          echo "Resolved VERSION=$V"
-
       - name: Validate VERSION
         run: |
           if [ -z "${VERSION:-}" ]; then
             echo "❌ VERSION is empty. Aborting docker."
             exit 1
           fi
+
+      - name: Ensure gradlew is executable
+        run: chmod +x "${PROJECT_DIR}/gradlew"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -136,7 +118,8 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Build & push with Jib
-        run: $GRADLEW jib --no-daemon -Pversion="${VERSION}"
+        working-directory: code
+        run: ./gradlew jib --no-daemon -Pversion="${VERSION}"
 
   clean-snapshots:
     name: Clean old GHCR snapshots (develop only)
@@ -146,8 +129,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
 
       - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
@@ -156,15 +138,8 @@ jobs:
           path: .wendara-ci-actions
           ref: main
 
-      - name: Resolve VERSION
-        id: ver
-        env:
-          RELEASE_CHANNEL: ${{ inputs.channel }}
-        run: |
-          chmod +x .wendara-ci-actions/scripts/read-version.sh
-          V="$(.wendara-ci-actions/scripts/read-version.sh)"
-          echo "VERSION=$V" >> $GITHUB_ENV
-          echo "Resolved VERSION=$V"
+      - name: Make scripts executable
+        run: chmod +x .wendara-ci-actions/scripts/*.sh
 
       - name: Validate VERSION
         run: |
@@ -189,8 +164,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
 
       - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
@@ -199,15 +173,8 @@ jobs:
           path: .wendara-ci-actions
           ref: main
 
-      - name: Resolve VERSION
-        id: ver
-        env:
-          RELEASE_CHANNEL: ${{ inputs.channel }}
-        run: |
-          chmod +x .wendara-ci-actions/scripts/read-version.sh
-          V="$(.wendara-ci-actions/scripts/read-version.sh)"
-          echo "VERSION=$V" >> $GITHUB_ENV
-          echo "Resolved VERSION=$V"
+      - name: Make scripts executable
+        run: chmod +x .wendara-ci-actions/scripts/*.sh
 
       - name: Validate VERSION
         run: |
