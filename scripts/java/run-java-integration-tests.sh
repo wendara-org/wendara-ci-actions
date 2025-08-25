@@ -9,6 +9,6 @@ if ! find . -type f -name "*TestIT.java" | grep -q .; then
   exit 0
 fi
 
-./gradlew integrationTest --tests '*TestIT' --no-daemon
+${GRADLEW:-./gradlew} integrationTest --tests '*TestIT' --no-daemon
 
 echo "✅ Integration tests completed."

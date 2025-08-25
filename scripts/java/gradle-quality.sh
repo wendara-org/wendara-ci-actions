@@ -11,14 +11,14 @@ fi
 
 # Checkstyle - Google style (expected config in a known location)
 echo "🔍 Running Checkstyle..."
-./gradlew checkstyleMain checkstyleTest --no-daemon
+${GRADLEW:-./gradlew} checkstyleMain checkstyleTest --no-daemon
 
 # PMD
 echo "🧹 Running PMD..."
-./gradlew pmdMain pmdTest --no-daemon
+${GRADLEW:-./gradlew} pmdMain pmdTest --no-daemon
 
 # SpotBugs
 echo "🐞 Running SpotBugs..."
-./gradlew spotbugsMain spotbugsTest --no-daemon
+${GRADLEW:-./gradlew} spotbugsMain spotbugsTest --no-daemon
 
 echo "✅ Quality checks completed successfully."

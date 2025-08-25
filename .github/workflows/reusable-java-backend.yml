@@ -60,6 +60,10 @@ permissions:
   packages: write
   pull-requests: write
 
+env:
+  PROJECT_DIR: code
+  GRADLEW: ./code/gradlew
+
 jobs:
 
   quality-checks:
@@ -85,6 +89,8 @@ jobs:
           java-version: 21
 
       - name: Run quality suite
+        env:
+          GRADLEW: ${{ env.GRADLEW }}
         run: .wendara-ci-actions/scripts/java/gradle-quality.sh
 
   unit-tests:
@@ -113,12 +119,15 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
+          cache-dependency-path: ${{ env.PROJECT_DIR }}/**/*.kts
 
       - name: Run unit tests
+        env:
+          GRADLEW: ${{ env.GRADLEW }}
         run: .wendara-ci-actions/scripts/java/run-java-unit-tests.sh
 
       - name: Generate JaCoCo report
-        run: ./gradlew jacocoTestReport --no-daemon
+        run: $GRADLEW jacocoTestReport --no-daemon
 
       - name: Upload JaCoCo HTML
         uses: actions/upload-artifact@v4
@@ -156,6 +165,8 @@ jobs:
         run: .wendara-ci-actions/scripts/java/start-java-integration-env.sh
 
       - name: Run integration tests
+        env:
+          GRADLEW: ${{ env.GRADLEW }}
         run: .wendara-ci-actions/scripts/java/run-java-integration-tests.sh
 
       - name: Stop integration environment
@@ -217,7 +228,7 @@ jobs:
       - name: Make scripts executable
         run: chmod +x .wendara-ci-actions/scripts/*.sh .wendara-ci-actions/scripts/java/*.sh
 
-      - name: Set up Java 21
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -242,7 +253,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build & push with Jib
-        run: ./gradlew jib --no-daemon -Pversion="${{ steps.ver.outputs.version }}"
+        run: $GRADLEW jib --no-daemon -Pversion="${{ steps.ver.outputs.version }}"
 
   clean-snapshots:
     name: Clean old GHCR snapshots
@@ -338,7 +349,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Java 21
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
