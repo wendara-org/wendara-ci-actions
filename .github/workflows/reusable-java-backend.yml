@@ -1,9 +1,9 @@
 # .github/workflows/reusable-java-backend.yml
 #
 # Reusable workflow for Java backend repositories (e.g., wendara-backend).
-# It runs quality checks (Checkstyle, PMD, SpotBugs), unit and integration tests,
-# builds and publishes Docker images to GHCR, and performs security analysis (OWASP).
-# After a stable release on main, it can open an automatic sync PR main → develop.
+# This workflow runs quality checks (Checkstyle, PMD, SpotBugs), unit and integration tests,
+# builds and publishes Docker images to GHCR, performs security analysis (OWASP),
+# and after a stable release on main, can open an automatic sync PR main → develop.
 #
 # Inputs (set by the caller workflow):
 #   - release-channel: string (required)         -> Which channel is being built (develop or main)
@@ -17,27 +17,29 @@
 #
 # Notes:
 # - This workflow assumes the repo has a standard Gradle Java project structure.
-# - All helper scripts are available under the scripts/java/ directory in this repository.
-#   Use relative paths like scripts/java/gradle-quality.sh, scripts/java/run-java-unit-tests.sh, etc.
+# - All helper scripts are available under .wendara-ci-actions/scripts/java/ in this repository.
 # - External dependencies required by some scripts:
 #     - yq (mikefarah, for YAML parsing)
 #     - Docker (for image build/push)
 #     - OWASP Dependency Check (via GitHub Action)
+# - The workflow can be triggered manually (workflow_dispatch) or via workflow_call.
 #
 # Usage Example:
 #   To call this workflow from another repo, use workflow_call and provide the required inputs/secrets.
 #   All scripts are invoked using their relative path from the repo root, e.g.:
-#     scripts/java/gradle-quality.sh
-#     scripts/java/run-java-unit-tests.sh
+#     .wendara-ci-actions/scripts/java/gradle-quality.sh
+#     .wendara-ci-actions/scripts/java/run-java-unit-tests.sh
 #
 # Jobs Overview:
 #   - quality-checks: Runs Checkstyle, PMD, SpotBugs on all Java sources.
 #   - unit-tests: Runs unit tests for all modules.
 #   - integration-tests: Runs integration tests (if present).
-#   - build-and-publish: Builds Docker image and pushes to GHCR.
 #   - release: Publishes release artifacts (if on main).
+#   - docker: Builds Docker image and pushes to GHCR.
+#   - clean-snapshots: Cleans old GHCR snapshots (develop only).
+#   - sync-pr: After stable publish, opens a PR to sync main → develop.
 #   - owasp-check: Runs OWASP Dependency Check and uploads report.
-#   - sync: After stable publish, opens a PR to sync main → develop.
+#   - summary: Prints a summary of the pipeline results.
 #
 # For more details, see the README.md in this repository.
 
@@ -174,7 +176,10 @@ jobs:
     name: Semantic release (tags/releases)
     runs-on: ubuntu-latest
     needs: [ unit-tests, integration-tests ]
-    if: ${{ inputs.release-channel == 'develop' || inputs.release-channel == 'main' }}
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+    outputs:
+      published: ${{ steps.set-published.outputs.published }}
+      released_version: ${{ steps.set-published.outputs.released_version }}
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
@@ -220,11 +225,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Post-capture latest tag & set outputs
+        id: set-published
+        run: |
+          git fetch --tags --force --quiet || true
+          POST_TAG="$(git tag --list --sort=-creatordate | head -n1)"
+          PRE_TAG="${{ steps.pre.outputs.tag }}"
+          if [ -n "$POST_TAG" ] && [ "$POST_TAG" != "$PRE_TAG" ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "released_version=${POST_TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "released_version=" >> "$GITHUB_OUTPUT"
+          fi
+
   docker:
     name: Build & push Docker image (Jib → GHCR)
     runs-on: ubuntu-latest
     needs: release
-    if: ${{ success() && (inputs.release-channel == 'develop' || inputs.release-channel == 'main') }}
+    if: ${{ success() && needs.release.outputs.published == 'true' }}
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
@@ -266,13 +285,13 @@ jobs:
 
       - name: Build & push with Jib
         working-directory: code
-        run: ./gradlew jib --no-daemon -Pversion="${{ steps.ver.outputs.version }}"
+        run: ./gradlew jib --no-daemon --no-configuration-cache -Pversion="${{ needs.release.outputs.released_version || steps.ver.outputs.version }}"
 
   clean-snapshots:
     name: Clean old GHCR snapshots
     runs-on: ubuntu-latest
     needs: release
-    if: ${{ success() && inputs.release-channel == 'develop' }}
+    if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'develop' }}
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
@@ -311,7 +330,7 @@ jobs:
     name: Sync PR main → develop
     runs-on: ubuntu-latest
     needs: release
-    if: ${{ success() && inputs.release-channel == 'main' }}
+    if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'main' }}
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
@@ -353,7 +372,8 @@ jobs:
     name: OWASP Dependency Check
     runs-on: ubuntu-latest
     needs: release
-    if: ${{ success() && inputs.release-channel == 'main' }}
+    if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'main' }}
+    continue-on-error: true
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
@@ -378,3 +398,17 @@ jobs:
         with:
           name: owasp-report
           path: reports
+
+  summary:
+    name: Pipeline Summary
+    runs-on: ubuntu-latest
+    needs: [docker, clean-snapshots, sync-pr, owasp-check]
+    if: always()
+    steps:
+      - name: Print summary
+        run: |
+          echo "📦 Java Backend CI Summary"
+          echo "Channel: ${{ inputs.release-channel }}"
+          echo "Package: ghcr.io/${{ github.repository_owner }}/${{ inputs['package-name'] }}"
+          echo "Published: ${{ needs.release.outputs.published }}"
+          echo "Version: ${{ needs.release.outputs.released_version }}"

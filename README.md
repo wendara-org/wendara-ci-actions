@@ -225,7 +225,8 @@ jobs:
 
 ### Java Backend (`reusable-java-backend.yml`)
 
-End‑to‑end CI pipeline for Java 21 + Gradle + Spring Boot with quality checks, image publishing and sync PR.
+End‑to‑end CI pipeline for Java 21 + Gradle + Spring Boot with quality checks, image publishing, sync PR, and a final
+pipeline summary.
 
 **What it does**
 
@@ -238,6 +239,7 @@ End‑to‑end CI pipeline for Java 21 + Gradle + Spring Boot with quality check
 7. On `main`: publishes **stable** Docker images and creates a **sync PR** to `develop`.
 8. Runs an **OWASP Dependency Check** on `main` after release.
 9. Cleans up old GHCR **snapshot** images to save space.
+10. Prints a **pipeline summary** at the end of the workflow (only on release builds).
 
 **Inputs**
 
@@ -254,16 +256,20 @@ End‑to‑end CI pipeline for Java 21 + Gradle + Spring Boot with quality check
 
 **Jobs**
 
-| Job                 | Description                                                      |
-|---------------------|------------------------------------------------------------------|
-| `quality-checks`    | Runs static analysis only (`checkstyle`, `pmd`, `spotbugs`).     |
-| `unit-tests`        | Runs unit tests and generates Jacoco coverage.                   |
-| `integration-tests` | Starts Docker Compose env, runs integration tests, and stops it. |
-| `release`           | Runs `semantic-release` to resolve version and tag commits.      |
-| `docker`            | Builds and pushes Docker image via Jib. Requires valid version.  |
-| `clean-snapshots`   | Removes old snapshot Docker tags, keeping the latest N.          |
-| `sync-pr`           | On `main`, creates PR to sync changes back to `develop`.         |
-| `owasp-check`       | Runs OWASP Dependency Check after stable release (`main` only).  |
+| Job                 | Description                                                        |
+|---------------------|--------------------------------------------------------------------|
+| `quality-checks`    | Runs static analysis only (`checkstyle`, `pmd`, `spotbugs`).       |
+| `unit-tests`        | Runs unit tests and generates Jacoco coverage.                     |
+| `integration-tests` | Starts Docker Compose env, runs integration tests, and stops it.   |
+| `release`           | Publishes release artifacts and sets version/tag.                  |
+| `docker`            | Builds and pushes Docker image to GHCR.                            |
+| `clean-snapshots`   | Cleans old GHCR snapshots (develop only).                          |
+| `sync-pr`           | Creates a PR to sync main → develop after release.                 |
+| `owasp-check`       | Runs OWASP Dependency Check and uploads report.                    |
+| `summary`           | Prints a summary of the pipeline results (only on release builds). |
+
+> **Note:** The `summary` job only runs on release builds (push to develop/main or workflow_call), not on pull requests.
+> This ensures the summary reflects the full pipeline and published artifacts.
 
 **Example usage** (`wendara-backend/.github/workflows/ci.yml`):
 
@@ -299,10 +305,9 @@ Reusable CI pipeline for **Node.js** / **TypeScript** apps, including web (React
 **What it does**
 
 1. Runs code quality checks:
-
-- `tsc --noEmit`
-- `eslint`
-- unit tests (e.g., Jest)
+   - `tsc --noEmit`
+   - `eslint`
+   - unit tests (e.g., Jest)
 
 2. (Optional) Runs a production build if `run_build: true`
 
@@ -526,6 +531,7 @@ Use `@main` while iterating, and switch to tag or SHA for production stability.
 ---
 
 ## Troubleshooting
+
 | Problem                              | Solution                                                                                                                                       |
 |--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Diff guard fails (API)**           | Bump **major** (`v1` → `v2`) and/or increase `info.version` appropriately, then re-run.                                                        |
