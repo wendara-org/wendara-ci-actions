@@ -178,13 +178,22 @@ jobs:
     needs: [ unit-tests, integration-tests ]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
     outputs:
-      published: ${{ steps.set-published.outputs.published }}
-      released_version: ${{ steps.set-published.outputs.released_version }}
+      published: ${{ steps.post.outputs.published }}
+      released_version: ${{ steps.post.outputs.released_version }}
+      pre_version: ${{ steps.pre.outputs.pre_version }}
+      post_version: ${{ steps.post.outputs.post_version }}
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Checkout ci-actions (scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: wendara-org/wendara-ci-actions
+          path: .wendara-ci-actions
+          ref: main
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -215,28 +224,51 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Run semantic-release
-        run: |
-          if [ "${{ inputs.release-channel }}" = "main" ]; then
-            npm run release:main
-          else
-            npm run release:develop
-          fi
+      # PRE: resolve version BEFORE semantic-release (channel-aware)
+      - name: Resolve PRE version (channel-aware)
+        id: pre
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Post-capture latest tag & set outputs
-        id: set-published
+          RELEASE_CHANNEL: ${{ inputs.release-channel }}
         run: |
           git fetch --tags --force --quiet || true
-          POST_TAG="$(git tag --list --sort=-creatordate | head -n1)"
-          PRE_TAG="${{ steps.pre.outputs.tag }}"
-          if [ -n "$POST_TAG" ] && [ "$POST_TAG" != "$PRE_TAG" ]; then
+          PRE_V="$(
+            ./.wendara-ci-actions/scripts/read-version.sh | tr -d '\r\n'
+          )"
+          echo "pre_version=${PRE_V}" >> "$GITHUB_OUTPUT"
+          echo "PRE_VERSION=${PRE_V}" >> "$GITHUB_ENV"
+          echo "🔎 PRE_VERSION=${PRE_V}"
+
+      - name: Run semantic-release (single config in package.json)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH_NAME: ${{ github.ref_name }}   # used by @semantic-release/exec prepareCmd
+        run: npx semantic-release --ci
+
+      # POST: re-resolve version AFTER semantic-release and decide if we published
+      - name: Post-capture version & set outputs
+        id: post
+        env:
+          RELEASE_CHANNEL: ${{ inputs.release-channel }}
+        run: |
+          git fetch --tags --force --quiet || true
+          POST_V="$(
+            ./.wendara-ci-actions/scripts/read-version.sh | tr -d '\r\n'
+          )"
+          echo "post_version=${POST_V}" >> "$GITHUB_OUTPUT"
+          echo "POST_VERSION=${POST_V}" >> "$GITHUB_ENV"
+          echo "🔎 POST_VERSION=${POST_V}"
+
+          PRE="${PRE_VERSION:-}"
+          POST="${POST_V:-}"
+
+          if { [ -n "$PRE" ] && [ -n "$POST" ] && [ "$POST" != "$PRE" ]; } || { [ -z "$PRE" ] && [ -n "$POST" ]; }; then
             echo "published=true" >> "$GITHUB_OUTPUT"
-            echo "released_version=${POST_TAG#v}" >> "$GITHUB_OUTPUT"
+            echo "released_version=${POST}" >> "$GITHUB_OUTPUT"
+            echo "✅ Release detected (published=true)."
           else
             echo "published=false" >> "$GITHUB_OUTPUT"
             echo "released_version=" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ No release detected (published=false)."
           fi
 
   docker:
@@ -265,16 +297,18 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Resolve VERSION
+      # Fallback resolver in case released_version is empty for any reason
+      - name: Resolve VERSION (fallback)
         id: ver
-        run: echo "version=$(.wendara-ci-actions/scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(.wendara-ci-actions/scripts/read-version.sh | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
 
       - name: Validate VERSION
         run: |
-          if [ -z "${{ steps.ver.outputs.version }}" ]; then
+          if [ -z "${{ needs.release.outputs.released_version || steps.ver.outputs.version }}" ]; then
             echo "❌ VERSION is empty. Aborting docker."
             exit 1
           fi
+          echo "Using VERSION=${{ needs.release.outputs.released_version || steps.ver.outputs.version }}"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -307,23 +341,25 @@ jobs:
       - name: Make scripts executable
         run: chmod +x .wendara-ci-actions/scripts/*.sh .wendara-ci-actions/scripts/java/*.sh
 
-      - name: Resolve VERSION
+      # Fallback resolver in case released_version is empty for any reason
+      - name: Resolve VERSION (fallback)
         id: ver
-        run: echo "version=$(.wendara-ci-actions/scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(.wendara-ci-actions/scripts/read-version.sh | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
 
       - name: Validate VERSION
         run: |
-          if [ -z "${{ steps.ver.outputs.version }}" ]; then
+          if [ -z "${{ needs.release.outputs.released_version || steps.ver.outputs.version }}" ]; then
             echo "❌ VERSION is empty. Aborting cleanup."
             exit 1
           fi
+          echo "Cleaning snapshots for VERSION=${{ needs.release.outputs.released_version || steps.ver.outputs.version }}"
 
       - name: Clean snapshots
         run: .wendara-ci-actions/scripts/clean-ghcr-snapshots.sh
         env:
           GH_OWNER: ${{ github.repository_owner }}
           PACKAGE_NAME: ${{ inputs['package-name'] }}
-          SNAPSHOT_VERSION: ${{ steps.ver.outputs.version }}
+          SNAPSHOT_VERSION: ${{ needs.release.outputs.released_version || steps.ver.outputs.version }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   sync-pr:
@@ -346,13 +382,14 @@ jobs:
       - name: Make scripts executable
         run: chmod +x .wendara-ci-actions/scripts/*.sh .wendara-ci-actions/scripts/java/*.sh
 
-      - name: Resolve VERSION
+      # Fallback resolver in case released_version is empty for any reason
+      - name: Resolve VERSION (fallback)
         id: ver
-        run: echo "version=$(.wendara-ci-actions/scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(.wendara-ci-actions/scripts/read-version.sh | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
 
       - name: Validate VERSION
         run: |
-          if [ -z "${{ steps.ver.outputs.version }}" ]; then
+          if [ -z "${{ needs.release.outputs.released_version || steps.ver.outputs.version }}" ]; then
             echo "❌ VERSION is empty. Aborting sync PR."
             exit 1
           fi
@@ -362,10 +399,10 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "chore: sync main → develop after release"
-          title: "Version '${{ steps.ver.outputs.version }}' sync main → develop"
+          title: "Version '${{ needs.release.outputs.released_version || steps.ver.outputs.version }}' sync main → develop"
           body: "Auto-generated PR to sync latest release."
           base: develop
-          branch: sync-release-${{ steps.ver.outputs.version }}
+          branch: sync-release-${{ needs.release.outputs.released_version || steps.ver.outputs.version }}
           delete-branch: true
 
   owasp-check:
