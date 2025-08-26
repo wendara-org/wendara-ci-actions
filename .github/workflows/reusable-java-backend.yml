@@ -178,15 +178,32 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
 
-      - name: Install node deps
+      # Create an isolated npm config so we don't rely on (or break because of) a repo .npmrc
+      - name: Prepare npm userconfig for CI
+        run: |
+          # Use the public npm registry by default
+          echo "registry=https://registry.npmjs.org/" > .npmrc.ci
+          echo "Using this CI npmrc:"
+          cat .npmrc.ci
+
+      # Install using the lockfile and our CI-only npmrc (prevents 401s from bad project .npmrc)
+      - name: Install dependencies (lockfile-respecting)
         run: npm ci
+        env:
+          NPM_CONFIG_USERCONFIG: .npmrc.ci
+          # This is only needed if you pull private packages (GH Packages).
+          # For public npm only, it will be ignored.
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure Git identity (bot)
         run: |
