@@ -157,7 +157,7 @@ jobs:
 
       - name: Build & push with Jib
         working-directory: code
-        run: ./gradlew jib --no-daemon --no-configuration-cache -Pversion="${VERSION}"
+        run: ./gradlew jib --no-daemon --no-configuration-cache -PreleaseVersion="${VERSION}"
 
   clean-snapshots:
     name: Clean old GHCR snapshots (develop only)

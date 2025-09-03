@@ -320,7 +320,7 @@ jobs:
 
       - name: Build & push with Jib
         working-directory: code
-        run: ./gradlew jib --no-daemon --no-configuration-cache -Pversion="${{ needs.release.outputs.released_version || steps.ver.outputs.version }}"
+        run: ./gradlew jib --no-daemon --no-configuration-cache -PreleaseVersion="${{ needs.release.outputs.released_version || steps.ver.outputs.version }}"
 
   clean-snapshots:
     name: Clean old GHCR snapshots
