@@ -75,7 +75,7 @@ fi
 
 # ---- Build tag→id mapping for snapshot tags ----
 # Snapshot regex: -SNAPSHOT or -SNAPSHOT.N
-SNAPSHOT_RE='-SNAPSHOT(\.[0-9]+)?$'
+SNAPSHOT_RE='-SNAPSHOT(\\.[0-9]+)?$'
 
 # Create an array of "tag id"
 mapfile -t TAG_ID_PAIRS < <(
