@@ -258,40 +258,50 @@ jobs:
       - name: Install oasdiff (pinned, with fallback)
         run: |
           set -euo pipefail
-          # Try direct binary first (fast path); fallback to official installer if asset name changes.
-          VERSION="v1.11.7"  # Pin to a known-good release
+          VERSION="v1.11.7"
           TMP="$(mktemp -d)"
           cd "$TMP"
 
-          # Attempt 1: direct asset (linux-amd64)
-          curl -fsSL "https://github.com/oasdiff/oasdiff/releases/download/${VERSION}/oasdiff-linux-amd64" -o oasdiff || true
-          chmod +x oasdiff || true
-
-          # Validate it's a real ELF, not HTML/text
-          if ! [ -x ./oasdiff ] || file ./oasdiff | grep -qi 'text'; then
-            echo "Direct asset not valid; falling back to official installer..."
-            rm -f ./oasdiff
+          # Attempt direct asset first (fast path)
+          if curl -fsSL -o oasdiff "https://github.com/oasdiff/oasdiff/releases/download/${VERSION}/oasdiff-linux-amd64"; then
+            chmod +x oasdiff || true
+            BIN="./oasdiff"
+          else
+            echo "Direct asset missing; using official installer..."
             curl -fsSL https://raw.githubusercontent.com/oasdiff/oasdiff/main/install.sh | sh -s -- -b . "${VERSION}"
+            # Installer may drop binary locally OR directly into /usr/local/bin depending on perms
+            BIN="./oasdiff"
+            if ! [ -x "$BIN" ]; then
+              BIN="/usr/local/bin/oasdiff"
+            fi
           fi
 
           # Final validation
-          file ./oasdiff | grep -qi 'ELF' || { echo "Invalid oasdiff binary"; exit 127; }
-          sudo install -m 0755 ./oasdiff /usr/local/bin/oasdiff
-          /usr/local/bin/oasdiff --version
+          if ! [ -x "$BIN" ]; then
+            echo "oasdiff not found at ${BIN}"
+            exit 127
+          fi
+          file "$BIN" | grep -qi 'ELF' || { echo "Invalid oasdiff binary"; exit 127; }
+
+          # Ensure it's available in PATH
+          if [ "$BIN" != "/usr/local/bin/oasdiff" ]; then
+            sudo install -m 0755 "$BIN" /usr/local/bin/oasdiff
+            BIN="/usr/local/bin/oasdiff"
+          fi
+
+          "$BIN" --version
 
       - name: Run semantic guard
         env:
           CHANGED_SPECS: ${{ needs.detect.outputs.changed_specs }}
         run: |
           set -euo pipefail
-          # Split space-separated list into an array to avoid concatenation issues.
-          read -r -a SPECS <<< "${CHANGED_SPECS}"
+          read -r -a SPECS <<< "${CHANGED_SPECS}"  # split on spaces
           for spec in "${SPECS[@]}"; do
             [ -z "$spec" ] && continue
             echo "Running semantic diff for '${spec}'"
             .wendara-ci-actions/scripts/api-first/api-oasdiff-guard.sh origin/main HEAD "$spec"
           done
-
 
       - name: Generate API changelog (oasdiff)
         run: |
