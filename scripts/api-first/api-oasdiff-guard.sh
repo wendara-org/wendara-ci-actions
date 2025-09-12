@@ -77,30 +77,29 @@ semver_parts() {
 read -r BASE_M BASE_m BASE_p <<< "$(semver_parts "${BASE_VERSION:-0.0.0}")"
 read -r HEAD_M HEAD_m HEAD_p <<< "$(semver_parts "${HEAD_VERSION}")"
 
-# Run oasdiff to detect breaking changes (exit code 2 -> breaking)
-# https://github.com/Tufin/oasdiff
-DIFF_OUT=".oasguard/diff.txt"
+# Run oasdiff v1 to detect breaking changes.
+# v1 does not support --fail-on-diff; instead, we use `--fail-on ERR` to exit(1) on breaking.
+DIFF_OUT=".oasguard/breaking.out"
 set +e
-oasdiff breaking "${BASE_FILE}" "${HEAD_FILE}" --fail-on-diff > "${DIFF_OUT}" 2>&1
+oasdiff breaking "${BASE_FILE}" "${HEAD_FILE}" --format text --fail-on ERR > "${DIFF_OUT}" 2>&1
 OAS_CODE=$?
 set -e
 
-# Classify required bump
+# Classify required bump (pragmatic policy for v1 CLI)
 REQUIRED="patch"
 if [[ "${NEW_API:-false}" == "true" ]]; then
   REQUIRED="minor"
-elif [[ ${OAS_CODE} -eq 2 ]]; then
+elif [[ ${OAS_CODE} -eq 1 ]]; then
+  # oasdiff exited with error level due to breaking changes
   REQUIRED="major"
-elif [[ ${OAS_CODE} -eq 0 ]]; then
-  # no diff at all
-  REQUIRED="none"
-elif [[ ${OAS_CODE} -eq 3 || ${OAS_CODE} -eq 1 ]]; then
-  # non-breaking diffs (added endpoints, etc.)
-  REQUIRED="minor"
 else
-  echo "::error title=oasdiff execution failed::Exit code '${OAS_CODE}'. Output follows:"
-  sed -n '1,200p' "${DIFF_OUT}"
-  exit 1
+  # No breaking changes; detect "any change" vs "no change".
+  # We fallback to a byte-level comparison (semantic-only would need extra tooling).
+  if cmp -s "${BASE_FILE}" "${HEAD_FILE}"; then
+    REQUIRED="none"
+  else
+    REQUIRED="minor"
+  fi
 fi
 
 # Validate bump policy

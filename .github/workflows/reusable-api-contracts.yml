@@ -358,9 +358,9 @@ jobs:
       - name: Build Redoc HTML previews
         run: |
           set -euo pipefail
-          IFS=$'\n'
           mkdir -p redoc-previews
-          for spec in ${{ needs.detect.outputs.changed_specs }}; do
+          read -r -a SPECS <<< "${{ needs.detect.outputs.changed_specs }}"
+          for spec in "${SPECS[@]}"; do
             [ -z "$spec" ] && continue
             api_dir="$(dirname "$spec")"
             api_name="$(echo "$api_dir" | tr '/' '-')"
