@@ -94,6 +94,15 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Configure Gradle credentials (GitHub Packages via PAT)
+        shell: bash
+        run: |
+          mkdir -p ~/.gradle
+          {
+            echo "gpr.user=${GPR_USER}"
+            echo "gpr.key=${GPR_TOKEN}"
+          } >> ~/.gradle/gradle.properties
+
       - name: Run quality suite
         working-directory: code
         run: ../.wendara-ci-actions/scripts/java/gradle-quality.sh
@@ -124,6 +133,15 @@ jobs:
           java-version: 21
           cache: gradle
           cache-dependency-path: code/**/*.kts
+
+      - name: Configure Gradle credentials (GitHub Packages via PAT)
+        shell: bash
+        run: |
+          mkdir -p ~/.gradle
+          {
+            echo "gpr.user=${GPR_USER}"
+            echo "gpr.key=${GPR_TOKEN}"
+          } >> ~/.gradle/gradle.properties
 
       - name: Run unit tests
         working-directory: code
@@ -163,6 +181,15 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+
+      - name: Configure Gradle credentials (GitHub Packages via PAT)
+        shell: bash
+        run: |
+          mkdir -p ~/.gradle
+          {
+            echo "gpr.user=${GPR_USER}"
+            echo "gpr.key=${GPR_TOKEN}"
+          } >> ~/.gradle/gradle.properties
 
       - name: Start integration environment
         working-directory: code
@@ -305,6 +332,15 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+
+      - name: Configure Gradle credentials (GitHub Packages via PAT)
+        shell: bash
+        run: |
+          mkdir -p ~/.gradle
+          {
+            echo "gpr.user=${GPR_USER}"
+            echo "gpr.key=${GPR_TOKEN}"
+          } >> ~/.gradle/gradle.properties
 
       # Fallback resolver in case released_version is empty for any reason
       - name: Resolve VERSION (fallback)

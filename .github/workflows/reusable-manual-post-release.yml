@@ -147,6 +147,15 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Configure Gradle credentials (GitHub Packages via PAT)
+        shell: bash
+        run: |
+          mkdir -p ~/.gradle
+          {
+            echo "gpr.user=${GPR_USER}"
+            echo "gpr.key=${GPR_TOKEN}"
+          } >> ~/.gradle/gradle.properties
+
       - name: Validate VERSION presence
         run: |
           if [ -z "${VERSION:-}" ]; then
