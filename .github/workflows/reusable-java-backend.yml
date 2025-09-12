@@ -56,6 +56,13 @@ on:
         description: "GHCR package/image name (e.g. wendara-backend)"
         required: true
         type: string
+    secrets:
+      GPR_USER:
+        required: true
+      GPR_TOKEN:
+        required: true
+      GITHUB_TOKEN:
+        required: true
 
 permissions:
   contents: write
