@@ -368,10 +368,14 @@ jobs:
     runs-on: ubuntu-latest
     needs: release
     if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'main' }}
+    permissions:
+      contents: write        # required to push the sync branch
+      pull-requests: write
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
 
       - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
@@ -381,7 +385,7 @@ jobs:
           ref: main
 
       - name: Make scripts executable
-        run: chmod +x .wendara-ci-actions/scripts/*.sh .wendara-ci-actions/scripts/java/*.sh
+        run: chmod -R +x .wendara-ci-actions/scripts
 
       # Fallback resolver in case released_version is empty for any reason
       - name: Resolve VERSION (fallback)
@@ -394,6 +398,22 @@ jobs:
             echo "❌ VERSION is empty. Aborting sync PR."
             exit 1
           fi
+
+      - name: Prepare sync branch (record main tip on top of develop)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --prune origin +refs/heads/*:refs/remotes/origin/*
+
+          SYNC_BRANCH="sync-release-${{ needs.release.outputs.released_version || steps.ver.outputs.version }}"
+          # Start from develop tip
+          git checkout -B "${SYNC_BRANCH}" origin/develop
+
+          # Force a merge commit referencing origin/main even if trees are identical.
+          git merge -s ours --no-ff -m "chore(sync): main → develop" origin/main || true
+
+          # Push the sync branch (will be ahead by 1 merge commit)
+          git push -u origin "${SYNC_BRANCH}"
 
       - name: Create sync PR (main → develop)
         uses: peter-evans/create-pull-request@v6
@@ -440,7 +460,7 @@ jobs:
   summary:
     name: Pipeline Summary
     runs-on: ubuntu-latest
-    needs: [docker, clean-snapshots, sync-pr, owasp-check]
+    needs: [ docker, clean-snapshots, sync-pr, owasp-check ]
     if: always()
     steps:
       - name: Print summary

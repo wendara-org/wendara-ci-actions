@@ -441,11 +441,27 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ publish ]
     if: needs.publish.outputs.released == 'true'
+    permissions:
+      contents: write       # needed to push the sync branch
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Prepare sync branch with a merge commit (record main tip)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --prune origin +refs/heads/*:refs/remotes/origin/*
+          # Start from develop
+          git checkout -B chore/sync-main-into-develop origin/develop
+          # Force a merge commit that records main's tip even if trees are identical.
+          # This aligns histories so future PRs from develop → main are not "out-of-date".
+          git merge -s ours --no-ff -m "chore(sync): main → develop" origin/main || true
+          # Push the sync branch (allow update)
+          git push -u origin chore/sync-main-into-develop
 
       - name: Create sync PR main → develop
         uses: peter-evans/create-pull-request@v6
@@ -456,7 +472,7 @@ jobs:
           base: develop
           title: "chore(sync): main → develop"
           body: |
-            Automated PR to keep branches in sync after stable releases.
+            Automated PR to align histories after stable releases.
             - Source: **main**
             - Target: **develop**
           labels: |
