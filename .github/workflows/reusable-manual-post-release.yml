@@ -72,6 +72,10 @@ permissions:
 
 env:
   PROJECT_DIR: code
+  # GitHub Packages (Maven) via PAT stored as secrets in the caller repo
+  GPR_USER: ${{ secrets.GPR_USER }}
+  GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+  # Standard GitHub-provided context (used by GHCR, releases, etc.)
   GITHUB_ACTOR: ${{ github.actor }}
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

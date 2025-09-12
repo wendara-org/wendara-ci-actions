@@ -64,6 +64,10 @@ permissions:
   issues: write
 
 env:
+  # GitHub Packages (Maven) via PAT stored as secrets in the caller repo
+  GPR_USER: ${{ secrets.GPR_USER }}
+  GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+  # Standard GitHub-provided context (used by GHCR, releases, etc.)
   GITHUB_ACTOR: ${{ github.actor }}
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -408,15 +412,11 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags --prune origin +refs/heads/*:refs/remotes/origin/*
-
           SYNC_BRANCH="sync-release-${{ needs.release.outputs.released_version || steps.ver.outputs.version }}"
           # Start from develop tip
           git checkout -B "${SYNC_BRANCH}" origin/develop
-
           # Force a merge commit referencing origin/main even if trees are identical.
           git merge -s ours --no-ff -m "chore(sync): main → develop" origin/main || true
-
-          # Push the sync branch (will be ahead by 1 merge commit)
           git push -u origin "${SYNC_BRANCH}"
 
       - name: Create sync PR (main → develop)
