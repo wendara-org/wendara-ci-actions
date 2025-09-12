@@ -247,7 +247,7 @@ jobs:
           ref: main
 
       - name: Make scripts executable
-        run: chmod +x .wendara-ci-actions/scripts/*.sh
+        run: chmod -R +x .wendara-ci-actions/scripts
 
       - name: Install yq & reviewdog
         run: |
@@ -255,19 +255,13 @@ jobs:
           sudo chmod +x /usr/local/bin/yq
           curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b /usr/local/bin
 
-      - name: Install oasdiff (Tufin, pinned)
+      - name: Install oasdiff (official installer, pinned)
         run: |
           set -euo pipefail
-          OASDIFF_VERSION="2.13.2"
-          TARBALL="oasdiff_${OASDIFF_VERSION}_Linux_x86_64.tar.gz"  # <- nombre correcto
-          URL="https://github.com/Tufin/oasdiff/releases/download/v${OASDIFF_VERSION}/${TARBALL}"
-          echo "Downloading $URL"
-          curl -fsSL -o "$TARBALL" "$URL"
-          tar -xzf "$TARBALL" oasdiff
-          sudo install -m 0755 oasdiff /usr/local/bin/oasdiff
-          rm -f "$TARBALL" oasdiff
-          file /usr/local/bin/oasdiff | grep -qi 'ELF' || (echo "Invalid oasdiff binary" && exit 127)
+          curl -L https://github.com/oasdiff/oasdiff/releases/download/v1.11.7/oasdiff-linux-amd64 -o oasdiff
+          chmod +x oasdiff
           oasdiff --version
+          sudo mv oasdiff /usr/local/bin
 
       - name: Run semantic guard
         env:
@@ -282,7 +276,6 @@ jobs:
           done
 
       - name: Generate API changelog (oasdiff)
-        # Produces a Markdown changelog per changed API and uploads as artifact.
         run: |
           chmod +x .wendara-ci-actions/scripts/api-first/oasdiff-changelog.sh
           BASE_REF="${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}"
@@ -335,13 +328,11 @@ jobs:
         run: npm i -g @redocly/cli@1
 
       - name: Build Redoc HTML previews
-        env:
-          CHANGED_SPECS: ${{ needs.detect.outputs.changed_specs }}
         run: |
           set -euo pipefail
           IFS=$'\n'
           mkdir -p redoc-previews
-          for spec in $CHANGED_SPECS; do
+          for spec in ${{ needs.detect.outputs.changed_specs }}; do
             [ -z "$spec" ] && continue
             api_dir="$(dirname "$spec")"
             api_name="$(echo "$api_dir" | tr '/' '-')"
