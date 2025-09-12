@@ -55,8 +55,6 @@ on:
         required: true
       GPR_TOKEN:
         required: true
-      GITHUB_TOKEN:
-        required: true
 
   workflow_dispatch:
     inputs:

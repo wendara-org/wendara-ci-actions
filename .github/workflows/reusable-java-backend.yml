@@ -61,8 +61,6 @@ on:
         required: true
       GPR_TOKEN:
         required: true
-      GITHUB_TOKEN:
-        required: true
 
 permissions:
   contents: write
