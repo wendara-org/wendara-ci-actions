@@ -130,6 +130,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          IFS=$'\n'
 
           # Gather directly changed specs
           DIRECT_SPECS=()
@@ -184,7 +185,7 @@ jobs:
     # Lint OpenAPI specs with Redocly (if present) and enforce Conventional Commits (on PR).
     name: Lint + Conventional Commits
     runs-on: ubuntu-latest
-    needs: [detect]
+    needs: [ detect ]
     if: needs.detect.outputs.any_changed == 'true'
     steps:
       - name: Checkout
@@ -211,7 +212,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          IFS=$'\n'
           for spec in ${{ needs.detect.outputs.changed_specs }}; do
+            [ -z "$spec" ] && continue
             echo "Linting '${spec}'"
             redocly lint "$spec"
           done
@@ -220,16 +223,23 @@ jobs:
     # Semantic diff guard with oasdiff; fails on breaking changes when version bump is insufficient.
     name: Semantic diff guard (oasdiff)
     runs-on: ubuntu-latest
-    needs: [detect]
+    needs: [ detect ]
     if: needs.detect.outputs.any_changed == 'true'
+    # Explicit permissions for reviewdog annotations inside reusable workflow.
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    # Pass token so reviewdog can publish PR checks from reusable workflow.
+    env:
+      REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Checkout (include scripts)
+      - name: Checkout consumer repo (full history)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          repository: ${{ github.repository }}  # consumer repo
 
-      - name: Checkout ci-actions (to get scripts)
+      - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
         with:
           repository: wendara-org/wendara-ci-actions
@@ -239,15 +249,33 @@ jobs:
       - name: Make scripts executable
         run: chmod +x .wendara-ci-actions/scripts/*.sh
 
-      - name: Install oasdiff
+      - name: Install yq & reviewdog
         run: |
-          curl -L https://github.com/oasdiff/oasdiff/releases/download/v1.11.6/oasdiff-linux-amd64 -o oasdiff
-          chmod +x oasdiff
-          sudo mv oasdiff /usr/local/bin
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Install oasdiff (Tufin, pinned)
+        run: |
+          set -euo pipefail
+          OASDIFF_VERSION="2.13.2"
+          OS="$(uname -s | tr '[:upper:]' '[:lower:]')"   # linux
+          ARCH="$(uname -m)"; case "$ARCH" in x86_64) ARCH=amd64 ;; aarch64|arm64) ARCH=arm64 ;; *) echo "Arch $ARCH not supported"; exit 1 ;; esac
+          URL="https://github.com/Tufin/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OS}_${ARCH}.tar.gz"
+          curl -fsSL "$URL" | tar -xz oasdiff
+          sudo mv oasdiff /usr/local/bin/oasdiff
+          sudo chmod +x /usr/local/bin/oasdiff
+          file /usr/local/bin/oasdiff | grep -qi 'ELF' || (echo "Invalid oasdiff binary" && exit 127)
+          oasdiff --version
 
       - name: Run semantic guard
+        env:
+          CHANGED_SPECS: ${{ needs.detect.outputs.changed_specs }}
         run: |
-          for spec in ${{ needs.detect.outputs.changed_specs }}; do
+          set -euo pipefail
+          IFS=$'\n'
+          for spec in $CHANGED_SPECS; do
+            [ -z "$spec" ] && continue
             echo "Running semantic diff for '$spec'"
             .wendara-ci-actions/scripts/api-first/api-oasdiff-guard.sh origin/main HEAD "$spec"
           done
@@ -278,7 +306,7 @@ jobs:
     # Optional Redoc HTML previews for reviewers; attached as artifacts.
     name: Build Redoc previews
     runs-on: ubuntu-latest
-    needs: [detect]
+    needs: [ detect ]
     if: needs.detect.outputs.any_changed == 'true' && inputs.run_redoc
     steps:
       - name: Checkout (include scripts)
@@ -295,7 +323,7 @@ jobs:
           ref: main
 
       - name: Make scripts executable
-        run: chmod +x .wendara-ci-actions/scripts/*.sh
+        run: chmod -R +x .wendara-ci-actions/scripts
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -309,8 +337,11 @@ jobs:
         env:
           CHANGED_SPECS: ${{ needs.detect.outputs.changed_specs }}
         run: |
+          set -euo pipefail
+          IFS=$'\n'
           mkdir -p redoc-previews
           for spec in $CHANGED_SPECS; do
+            [ -z "$spec" ] && continue
             api_dir="$(dirname "$spec")"
             api_name="$(echo "$api_dir" | tr '/' '-')"
             out_html="redoc-previews/${api_name}.html"
@@ -329,7 +360,7 @@ jobs:
     # Publish changed specs as Maven artifacts to GitHub Packages (or mavenLocal in local runs).
     name: Publish changed specs
     runs-on: ubuntu-latest
-    needs: [detect, validate, guard]  # ensure validations pass before publishing
+    needs: [ detect, validate, guard ]  # ensure validations pass before publishing
     if: needs.detect.outputs.any_changed == 'true' && inputs.publish_enabled
     outputs:
       released: ${{ steps.flag.outputs.released }}
@@ -388,7 +419,7 @@ jobs:
     # After stable publish on main, open a PR to sync main → develop.
     name: Sync main → develop
     runs-on: ubuntu-latest
-    needs: [publish]
+    needs: [ publish ]
     if: needs.publish.outputs.released == 'true'
     steps:
       - name: Checkout

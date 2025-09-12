@@ -21,6 +21,16 @@ BASE_REF="${1:?Missing base ref}"
 HEAD_REF="${2:?Missing head ref}"
 SPEC_PATH="${3:?Missing spec path}"
 
+# Ensure required binaries exist early and fail fast.
+command -v oasdiff >/dev/null || { echo "::error::oasdiff not found"; exit 127; }
+command -v yq >/dev/null || { echo "::error::yq not found"; exit 127; }
+
+# Pass token for reviewdog when running in reusable workflows.
+export REVIEWDOG_GITHUB_API_TOKEN="${REVIEWDOG_GITHUB_API_TOKEN:-${GITHUB_TOKEN:-}}"
+
+# sanity: oasdiff must be a binary
+file "$(command -v oasdiff)" | grep -qi 'text' && { echo "::error::Invalid oasdiff binary (looks like text/HTML)"; exit 127; }
+
 # Resolve temporary copies of base and head specs
 mkdir -p .oasguard
 BASE_FILE=".oasguard/base.yaml"
@@ -64,7 +74,7 @@ semver_parts() {
   echo "${MA:-0} ${MI:-0} ${PA:-0}"
 }
 
-read -r BASE_M BASE_m BASE_p <<< "$(semver_parts "${BASE_VERSION}")"
+read -r BASE_M BASE_m BASE_p <<< "$(semver_parts "${BASE_VERSION:-0.0.0}")"
 read -r HEAD_M HEAD_m HEAD_p <<< "$(semver_parts "${HEAD_VERSION}")"
 
 # Run oasdiff to detect breaking changes (exit code 2 -> breaking)
@@ -105,12 +115,12 @@ elif [[ "${REQUIRED}" == "patch" && ( ${HEAD_M} -gt ${BASE_M} || ( ${HEAD_M} -eq
   ok=true
 fi
 
-echo "Base version: ${BASE_VERSION}"
+echo "Base version: ${BASE_VERSION:-0.0.0}"
 echo "Head version: ${HEAD_VERSION}"
 echo "Required bump: ${REQUIRED}"
 
 if ! $ok; then
-  echo "$SPEC_PATH:1 Required '${REQUIRED}' version bump not satisfied by '${HEAD_VERSION}' (base: '${BASE_VERSION}')" | \
+  echo "$SPEC_PATH:1 Required '${REQUIRED}' version bump not satisfied by '${HEAD_VERSION}' (base: '${BASE_VERSION:-0.0.0}')" | \
   reviewdog -efm="%f:%l %m" \
     -name="OASDiff Guard" \
     -reporter=github-pr-check \
