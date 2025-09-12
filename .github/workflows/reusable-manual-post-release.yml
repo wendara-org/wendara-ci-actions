@@ -72,6 +72,8 @@ permissions:
 
 env:
   PROJECT_DIR: code
+  GITHUB_ACTOR: ${{ github.actor }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
 
