@@ -150,11 +150,26 @@ jobs:
       - name: Configure Gradle credentials (GitHub Packages via PAT)
         shell: bash
         run: |
+          set -euo pipefail
+          # 1) Write to ~/.gradle
           mkdir -p ~/.gradle
           {
             echo "gpr.user=${GPR_USER}"
             echo "gpr.key=${GPR_TOKEN}"
-          } >> ~/.gradle/gradle.properties
+          } > ~/.gradle/gradle.properties
+
+          # 2) If GRADLE_USER_HOME is set, write there too
+          if [ -n "${GRADLE_USER_HOME:-}" ]; then
+            mkdir -p "${GRADLE_USER_HOME}"
+            cp ~/.gradle/gradle.properties "${GRADLE_USER_HOME}/gradle.properties"
+            echo "Wrote gradle.properties to \$GRADLE_USER_HOME=${GRADLE_USER_HOME}"
+          else
+            echo "GRADLE_USER_HOME not set; using ~/.gradle"
+          fi
+        env:
+          # 3) Belt-and-suspenders: expose as Gradle project properties via env
+          ORG_GRADLE_PROJECT_gpr_user: ${{ secrets.GPR_USER }}
+          ORG_GRADLE_PROJECT_gpr_key: ${{ secrets.GPR_TOKEN }}
 
       - name: Validate VERSION presence
         run: |
