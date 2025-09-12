@@ -259,22 +259,13 @@ jobs:
         run: |
           set -euo pipefail
           OASDIFF_VERSION="2.13.2"
-          OS="$(uname -s | tr '[:upper:]' '[:lower:]')"   # linux
-          ARCH="$(uname -m)"; case "$ARCH" in
-            x86_64) ARCH="amd64" ;;
-            aarch64|arm64) ARCH="arm64" ;;
-            *) echo "Arch $ARCH not supported"; exit 1 ;;
-          esac
-          TARBALL="oasdiff_${OASDIFF_VERSION}_${OS}_${ARCH}.tar.gz"
+          TARBALL="oasdiff_${OASDIFF_VERSION}_Linux_x86_64.tar.gz"  # <- nombre correcto
           URL="https://github.com/Tufin/oasdiff/releases/download/v${OASDIFF_VERSION}/${TARBALL}"
-
           echo "Downloading $URL"
           curl -fsSL -o "$TARBALL" "$URL"
           tar -xzf "$TARBALL" oasdiff
           sudo install -m 0755 oasdiff /usr/local/bin/oasdiff
           rm -f "$TARBALL" oasdiff
-
-          # Sanity check: ensure it's a real binary
           file /usr/local/bin/oasdiff | grep -qi 'ELF' || (echo "Invalid oasdiff binary" && exit 127)
           oasdiff --version
 
