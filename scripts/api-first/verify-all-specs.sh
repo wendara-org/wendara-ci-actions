@@ -16,7 +16,7 @@ if [[ -z "$SPECS" ]]; then
 fi
 
 # Install tools
-npm i -g @redocly/cli@1 > /dev/null
+npm i -g @redocly/cli > /dev/null
 curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b /usr/local/bin
 
 # Run Redocly lint through reviewdog
