@@ -206,7 +206,7 @@ jobs:
           node-version: ${{ inputs.node_version }}
 
       - name: Install Redocly CLI
-        run: npm i -g @redocly/cli@1
+        run: npm i -g @redocly/cli
 
       - name: Redocly lint (all changed specs)
         shell: bash
@@ -353,7 +353,7 @@ jobs:
           node-version: ${{ inputs.node_version }}
 
       - name: Install Redocly CLI
-        run: npm i -g @redocly/cli@1
+        run: npm i -g @redocly/cli
 
       - name: Build Redoc HTML previews
         run: |
