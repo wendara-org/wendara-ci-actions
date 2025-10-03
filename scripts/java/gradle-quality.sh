@@ -16,13 +16,7 @@ if [ -z "${FIRST_JAVA_FILE}" ]; then
   exit 0
 fi
 # Checkstyle - Google style (expected config in a known location)
-echo "🔍 Running Checkstyle..."
-./gradlew checkstyleMain checkstyleTest --no-daemon --stacktrace
-
-echo "🧹 Running PMD..."
-./gradlew pmdMain pmdTest --no-daemon --stacktrace
-
-echo "🐞 Running SpotBugs..."
-./gradlew spotbugsMain spotbugsTest --no-daemon --stacktrace
+echo "Building Project and verifying Checkstyle, PMD, SpotBugs..."
+./gradlew build --no-daemon --stacktrace
 
 echo "✅ Quality checks completed successfully."
