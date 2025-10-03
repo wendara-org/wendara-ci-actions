@@ -93,11 +93,16 @@ jobs:
           path: .wendara-ci-actions
           ref: main
 
-      - name: Set up Java
+      - name: Make scripts executable
+        run: chmod +x .wendara-ci-actions/scripts/*.sh .wendara-ci-actions/scripts/java/*.sh
+
+      - name: Set up Java (Gradle cache)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
+          cache: gradle
+          cache-dependency-path: code/**/*.kts
 
       - name: Configure Gradle credentials (GitHub Packages via PAT)
         shell: bash
@@ -114,7 +119,7 @@ jobs:
           if [ -n "${GRADLE_USER_HOME:-}" ]; then
             mkdir -p "${GRADLE_USER_HOME}"
             cp ~/.gradle/gradle.properties "${GRADLE_USER_HOME}/gradle.properties"
-            echo "Wrote gradle.properties to \$GRADLE_USER_HOME=${GRADLE_USER_HOME}"
+            echo "Wrote gradle.properties to '$GRADLE_USER_HOME=${GRADLE_USER_HOME}'"
           else
             echo "GRADLE_USER_HOME not set; using ~/.gradle"
           fi
@@ -122,7 +127,6 @@ jobs:
           # 3) Belt-and-suspenders: expose as Gradle project properties via env
           ORG_GRADLE_PROJECT_gpr_user: ${{ secrets.GPR_USER }}
           ORG_GRADLE_PROJECT_gpr_key: ${{ secrets.GPR_TOKEN }}
-
 
       - name: Run quality suite
         working-directory: code
