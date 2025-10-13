@@ -125,14 +125,23 @@ jobs:
             metadata.yml
             .redocly.yaml
 
-      - name: Collect changed specs
+      - name: Install yq (for version bump detection)
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Collect changed specs (no root expansion, only version-bumped per-API metadata)
         id: collect
         shell: bash
         run: |
           set -euo pipefail
           IFS=$'\n'
 
-          # Gather directly changed specs
+          BASE_REF="${{ github.event.pull_request.base.sha || github.event.before || 'origin/main' }}"
+          HEAD_REF="${{ github.sha }}"
+
+          # 1) Gather directly changed specs
           DIRECT_SPECS=()
           for f in ${{ steps.changed.outputs.all_changed_files }}; do
             if [[ "$f" == apis/*/*/*/openapi.yaml ]]; then
@@ -140,46 +149,38 @@ jobs:
             fi
           done
 
-          # If per-API metadata changed, map it to its sibling openapi.yaml
-          for f in ${{ steps.changed.outputs.all_changed_files }}; do
-            if [[ "$f" == apis/*/*/*/metadata.yml ]]; then
-              d="$(dirname "$f")"
-              if [[ -f "$d/openapi.yaml" ]]; then
-                DIRECT_SPECS+=("$d/openapi.yaml")
+          # 2) Per-API metadata.yml: include ONLY if version changed
+          VERSION_BUMP_SPECS=()
+          for meta in ${{ steps.changed.outputs.all_changed_files }}; do
+            if [[ "$meta" == apis/*/*/*/metadata.yml ]]; then
+              old_ver="$(git show "${BASE_REF}:${meta}" 2>/dev/null | yq '.version' || true)"
+              new_ver="$(yq '.version' "$meta" || true)"
+              if [[ -n "$old_ver" && -n "$new_ver" && "$old_ver" != "$new_ver" ]]; then
+                api_dir="$(dirname "$meta")"
+                if [[ -f "$api_dir/openapi.yaml" ]]; then
+                  VERSION_BUMP_SPECS+=("$api_dir/openapi.yaml")
+                fi
               fi
             fi
           done
 
-          # Deduplicate
-          # shellcheck disable=SC2206
-          UNIQUE=($(printf "%s\n" "${DIRECT_SPECS[@]}" | sort -u))
+          # 3) NEVER expand all specs when root metadata.yml changes.
+          #    Root index may affect whitelist, but should not force republish by itself.
 
-          # If root metadata.yml changed, we may need to re-include all listed APIs.
-          ROOT_CHANGED=false
-          for f in ${{ steps.changed.outputs.all_changed_files }}; do
-            if [[ "$f" == "metadata.yml" ]]; then ROOT_CHANGED=true; fi
-          done
-
-          if $ROOT_CHANGED; then
-            # Optional: if root index changed, include all listed specs from it.
-            # We will filter later according to require_listed_only in the publish stage.
-            # In detect, just add everything already in the repo under apis/*/*/*/openapi.yaml
-            while IFS= read -r spec; do
-              UNIQUE+=("$spec")
-            done < <(git ls-files 'apis/*/*/*/openapi.yaml')
-          fi
-
-          # Final unique list
-          # shellcheck disable=SC2206
-          UNIQUE=($(printf "%s\n" "${UNIQUE[@]}" | sort -u))
-          if [[ ${#UNIQUE[@]} -eq 0 ]]; then
+          # Merge and deduplicate
+          ALL=("${DIRECT_SPECS[@]}" "${VERSION_BUMP_SPECS[@]}")
+          if [[ ${#ALL[@]} -eq 0 ]]; then
             echo "changed_specs=" >> $GITHUB_OUTPUT
             echo "any_changed=false" >> $GITHUB_OUTPUT
-          else
-            CHANGED_SPECS=$(printf "%s " "${UNIQUE[@]}")
-            echo "changed_specs=${CHANGED_SPECS}" >> $GITHUB_OUTPUT
-            echo "any_changed=true" >> $GITHUB_OUTPUT
+            exit 0
           fi
+
+          mapfile -t UNIQUE < <(printf "%s\n" "${ALL[@]}" | sort -u)
+          CHANGED_SPECS="$(printf "%s " "${UNIQUE[@]}")"
+          echo "Changed specs (post-filter):"
+          printf "  - %s\n" "${UNIQUE[@]}"
+          echo "changed_specs=${CHANGED_SPECS}" >> $GITHUB_OUTPUT
+          echo "any_changed=true" >> $GITHUB_OUTPUT
 
   validate:
     # Lint OpenAPI specs with Redocly (if present) and enforce Conventional Commits (on PR).
@@ -286,17 +287,15 @@ jobs:
           # Ensure it's available in PATH
           if [ "$BIN" != "/usr/local/bin/oasdiff" ]; then
             sudo install -m 0755 "$BIN" /usr/local/bin/oasdiff
-            BIN="/usr/local/bin/oasdiff"
           fi
-
-          "$BIN" --version
+          /usr/local/bin/oasdiff --version
 
       - name: Run semantic guard
         env:
           CHANGED_SPECS: ${{ needs.detect.outputs.changed_specs }}
         run: |
           set -euo pipefail
-          read -r -a SPECS <<< "${CHANGED_SPECS}"  # split on spaces
+          read -r -a SPECS <<< "${CHANGED_SPECS}"
           for spec in "${SPECS[@]}"; do
             [ -z "$spec" ] && continue
             echo "Running semantic diff for '${spec}'"
@@ -378,6 +377,8 @@ jobs:
 
   publish:
     # Publish changed specs as Maven artifacts to GitHub Packages (or mavenLocal in local runs).
+    # Hardened against false positives: we pre-filter to avoid 409 conflicts
+    # by skipping artifacts that already exist in the registry (HEAD check).
     name: Publish changed specs
     runs-on: ubuntu-latest
     needs: [ detect, validate, guard ]  # ensure validations pass before publishing
@@ -390,7 +391,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install yq (required by Gradle build.kts)
+      - name: Install yq (required by Gradle build.kts and filtering)
         run: |
           sudo curl -sSL -o /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
@@ -413,11 +414,105 @@ jobs:
             echo "value=SNAPSHOT" >> $GITHUB_OUTPUT
           fi
 
-      - name: Publish (changed-only)
+      - name: Resolve publish list (skip already-published artifacts)
+        id: filter
+        env:
+          CHANGED_SPECS: ${{ needs.detect.outputs.changed_specs }}
+          REQUIRE_LISTED_ONLY: ${{ inputs.require_listed_only }}
+          GITHUB_TOKEN: ${{ secrets.PACKAGES_TOKEN || github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          read -r -a SPECS <<< "${CHANGED_SPECS}"
+          ROOT_META="metadata.yml"
+
+          # Build a whitelist when require_listed_only=true (by exact spec path)
+          declare -A WHITE=()
+          if [[ "${REQUIRE_LISTED_ONLY}" == "true" && -f "${ROOT_META}" ]]; then
+            # Expected: root metadata lists allowed spec paths under a key like 'listedPaths'
+            # If your key name differs, adjust '.listedPaths[]' accordingly.
+            while IFS= read -r p; do
+              [[ -n "$p" ]] && WHITE["$p"]=1
+            done < <(yq '.listedPaths[]' "${ROOT_META}" 2>/dev/null || true)
+          fi
+
+          must_publish() {
+            local spec="$1"
+            local dir; dir="$(dirname "$spec")"
+            local meta="${dir}/metadata.yml"
+
+            # Respect require_listed_only
+            if [[ "${REQUIRE_LISTED_ONLY}" == "true" && ${#WHITE[@]} -gt 0 ]]; then
+              if [[ -z "${WHITE[$spec]:-}" ]]; then
+                echo "skip: not listed -> ${spec}" >&2
+                return 1
+              fi
+            fi
+
+            # Read per-API metadata (publish flag defaults to true)
+            local publish="true"
+            local groupId="" artifactId="" version=""
+            if [[ -f "$meta" ]]; then
+              publish="$(yq '.publish // true' "$meta" 2>/dev/null || echo true)"
+              groupId="$(yq -r '.groupId // ""' "$meta" 2>/dev/null || echo "")"
+              artifactId="$(yq -r '.artifactId // ""' "$meta" 2>/dev/null || echo "")"
+              version="$(yq -r '.version // ""' "$meta" 2>/dev/null || echo "")"
+            fi
+
+            if [[ "${publish}" != "true" ]]; then
+              echo "skip: publish=false -> ${spec}" >&2
+              return 1
+            fi
+
+            # If any coord is missing, we cannot HEAD-check; defer to Gradle
+            if [[ -z "$groupId" || -z "$artifactId" || -z "$version" ]]; then
+              echo "no-check: missing coords -> ${spec}" >&2
+              return 0
+            fi
+
+            # HEAD check against GH Packages. If 200 -> already exists (skip).
+            local repo="https://maven.pkg.github.com/wendara-org/wendara-api-definitions"
+            local groupPath="${groupId//./\/}"
+            local url="${repo}/${groupPath}/${artifactId}/${version}/${artifactId}-${version}.zip"
+
+            local code
+            code=$(curl -s -o /dev/null -w "%{http_code}" -I \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" "$url" || true)
+
+            if [[ "$code" == "200" ]]; then
+              echo "skip: exists (409 avoided) -> ${spec}" >&2
+              return 1
+            fi
+
+            # Otherwise, publish
+            return 0
+          }
+
+          FILTERED=()
+          for spec in "${SPECS[@]}"; do
+            [[ -z "$spec" ]] && continue
+            if must_publish "$spec"; then
+              FILTERED+=("$spec")
+            fi
+          done
+
+          if [[ ${#FILTERED[@]} -eq 0 ]]; then
+            echo "filtered_specs=" >> $GITHUB_OUTPUT
+            echo "published_any=false" >> $GITHUB_OUTPUT
+            echo "Nothing to publish after filtering (already in registry or not listed)."
+          else
+            FILTERED_SPECS="$(printf "%s " "${FILTERED[@]}")"
+            echo "filtered_specs=${FILTERED_SPECS}" >> $GITHUB_OUTPUT
+            echo "published_any=true" >> $GITHUB_OUTPUT
+            printf "Will publish:\n  - %s\n" "${FILTERED[@]}"
+          fi
+
+      - name: Publish (changed-only, filtered)
+        if: steps.filter.outputs.filtered_specs != ''
         env:
           GITHUB_TOKEN: ${{ secrets.PACKAGES_TOKEN || github.token }}
         run: |
-          CHANGED="$(echo '${{ needs.detect.outputs.changed_specs }}' | xargs)"
+          CHANGED="$(echo '${{ steps.filter.outputs.filtered_specs }}' | xargs)"
           ./gradlew --no-daemon --no-configuration-cache \
             publishChangedSpecs \
             -PchangedSpecs="$CHANGED" \
@@ -428,8 +523,9 @@ jobs:
         id: flag
         shell: bash
         run: |
-          # We consider "released=true" only when publishing on main (stable channel).
-          if [[ "${{ steps.channel.outputs.value }}" == "RELEASE" ]]; then
+          # We consider "released=true" only when publishing on main (stable channel)
+          # AND there was at least one spec to publish post-filtering.
+          if [[ "${{ steps.channel.outputs.value }}" == "RELEASE" && "${{ steps.filter.outputs.published_any }}" == "true" ]]; then
             echo "released=true" >> $GITHUB_OUTPUT
           else
             echo "released=false" >> $GITHUB_OUTPUT
