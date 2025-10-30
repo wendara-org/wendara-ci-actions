@@ -532,72 +532,83 @@ jobs:
           fi
 
   sync:
-    # After stable publish on main, open a PR to sync main → develop.
     name: Sync main → develop
     runs-on: ubuntu-latest
     needs: [ publish ]
     if: needs.publish.outputs.released == 'true'
     permissions:
-      contents: write       # needed to push the sync branch
+      contents: write
       pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.PACKAGES_TOKEN || github.token }}
 
       - name: Configure Git identity
-        # Use GitHub Actions bot identity for commits
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Fetch branches and create sync branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --prune origin +refs/heads/*:refs/remotes/origin/*
-          # Start from develop
-          git checkout -B chore/sync-main-into-develop origin/develop
-
-      - name: Merge main tip (record-only merge)
+      - name: Create sync branch and merge
         id: merge
-        shell: bash
         run: |
-          set -euo pipefail
-          # Force a merge commit that records main's tip even if trees are identical.
-          # This aligns histories so future PRs from develop → main are not "out-of-date".
-          git merge -s ours --no-ff -m "chore(sync): main → develop (record tip)" origin/main
+          git fetch origin main develop
+          git checkout -b chore/sync-main-into-develop origin/develop
 
-          # Detect whether there are any content changes
-          if git diff --quiet origin/develop...HEAD; then
-            echo "tree_changed=false" >> $GITHUB_OUTPUT
+          # Merge with 'ours' strategy to create history commit without changing content
+          git merge -s ours --no-ff origin/main -m "chore(sync): record main tip in develop history"
+
+          # Check if tree changed compared to develop
+          if git diff-tree --quiet origin/develop HEAD; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
           else
-            echo "tree_changed=true" >> $GITHUB_OUTPUT
+            echo "has_changes=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Push merge directly to develop (no content changes)
-        if: steps.merge.outputs.tree_changed == 'false'
-        shell: bash
+      - name: Push directly to develop (no content changes)
+        if: steps.merge.outputs.has_changes == 'false'
         run: |
-          set -euo pipefail
-          # Push the merge commit directly to develop to align history
+          # Direct push since it's only a history merge commit
           git push origin HEAD:develop
 
-      - name: Create PR main → develop (when content differs)
-        if: steps.merge.outputs.tree_changed == 'true'
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.PACKAGES_TOKEN || github.token }}
-          commit-message: "chore(sync): merge main back into develop"
-          branch: chore/sync-main-into-develop
-          base: develop
-          title: "chore(sync): main → develop"
-          body: |
-            Automated PR to align histories after stable releases.
-            - Source: **main**
-            - Target: **develop**
-          labels: |
-            chore
-            sync
-          delete-branch: true
+      - name: Create PR (if there are actual changes)
+        if: steps.merge.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PACKAGES_TOKEN || github.token }}
+        run: |
+          git push -f origin chore/sync-main-into-develop
+
+          # Check if PR already exists
+          existing_pr=$(gh pr list --head chore/sync-main-into-develop --base develop --json number --jq '.[0].number')
+
+          if [ -n "$existing_pr" ]; then
+            echo "✅ PR #$existing_pr already exists"
+          else
+            gh pr create \
+              --base develop \
+              --head chore/sync-main-into-develop \
+              --title "chore(sync): merge main into develop" \
+              --body "$(cat <<EOF
+          ## 🔄 Sync main → develop
+
+          Automated PR to merge changes from **main** back into **develop** after release.
+
+          ⚠️ This PR contains actual content changes that need review.
+
+          **Source:** \`main\`
+          **Target:** \`develop\`
+          EOF
+              )" \
+              --label chore \
+              --label sync
+          fi
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.merge.outputs.has_changes }}" == "false" ]; then
+            echo "✅ Pushed merge commit directly to develop (history sync only)"
+          else
+            echo "📝 Created PR with content changes for review"
+          fi
