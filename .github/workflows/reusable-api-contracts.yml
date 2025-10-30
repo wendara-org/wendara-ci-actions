@@ -541,25 +541,51 @@ jobs:
       contents: write       # needed to push the sync branch
       pull-requests: write
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Prepare sync branch with a merge commit (record main tip)
+      - name: Configure Git identity
+        # Use GitHub Actions bot identity for commits
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch branches and create sync branch
         shell: bash
         run: |
           set -euo pipefail
           git fetch --no-tags --prune origin +refs/heads/*:refs/remotes/origin/*
           # Start from develop
           git checkout -B chore/sync-main-into-develop origin/develop
+
+      - name: Merge main tip (record-only merge)
+        id: merge
+        shell: bash
+        run: |
+          set -euo pipefail
           # Force a merge commit that records main's tip even if trees are identical.
           # This aligns histories so future PRs from develop → main are not "out-of-date".
-          git merge -s ours --no-ff -m "chore(sync): main → develop" origin/main || true
-          # Push the sync branch (allow update)
-          git push -u origin chore/sync-main-into-develop
+          git merge -s ours --no-ff -m "chore(sync): main → develop (record tip)" origin/main
 
-      - name: Create sync PR main → develop
+          # Detect whether there are any content changes
+          if git diff --quiet origin/develop...HEAD; then
+            echo "tree_changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "tree_changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Push merge directly to develop (no content changes)
+        if: steps.merge.outputs.tree_changed == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Push the merge commit directly to develop to align history
+          git push origin HEAD:develop
+
+      - name: Create PR main → develop (when content differs)
+        if: steps.merge.outputs.tree_changed == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.PACKAGES_TOKEN || github.token }}

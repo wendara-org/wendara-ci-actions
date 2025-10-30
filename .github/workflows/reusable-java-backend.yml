@@ -488,6 +488,7 @@ jobs:
     permissions:
       contents: write        # required to push the sync branch
       pull-requests: write
+
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
@@ -503,6 +504,12 @@ jobs:
 
       - name: Make scripts executable
         run: chmod -R +x .wendara-ci-actions/scripts
+
+      - name: Configure Git identity
+        # Use GitHub Actions bot identity for commits
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       # Fallback resolver in case released_version is empty for any reason
       - name: Resolve VERSION (fallback)
@@ -522,10 +529,13 @@ jobs:
           set -euo pipefail
           git fetch --no-tags --prune origin +refs/heads/*:refs/remotes/origin/*
           SYNC_BRANCH="sync-release-${{ needs.release.outputs.released_version || steps.ver.outputs.version }}"
+
           # Start from develop tip
           git checkout -B "${SYNC_BRANCH}" origin/develop
-          # Force a merge commit referencing origin/main even if trees are identical.
-          git merge -s ours --no-ff -m "chore(sync): main → develop" origin/main || true
+
+          # Perform an "ours" merge to record main's tip even if both trees are identical.
+          git merge -s ours --no-ff -m "chore(sync): main → develop" origin/main
+
           git push -u origin "${SYNC_BRANCH}"
 
       - name: Create sync PR (main → develop)
