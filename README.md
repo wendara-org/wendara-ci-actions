@@ -20,6 +20,7 @@ Reusable GitHub Actions **workflows** and **helper scripts** for Wendara’s eng
   - [Contract Validation Only (`reusable-verify-contracts.yml`)](#contract-validation-only-reusable-verify-contractsyml)
   - [Java Backend (`reusable-java-backend.yml`)](#java-backend-reusable-java-backendyml)
   - [Node Apps (`reusable-node-app.yml`)](#node-apps-reusable-node-appyml)
+  - [Node Mobile Apps (`reusable-node-mobile.yml`)](#node-mobile-apps-reusable-node-mobileyml)
 - [Helper Scripts](#helper-scripts)
 - [Reviewdog & PR annotations](#reviewdog--pr-annotations)
 - [API First - How Versioning, Publishing & Changelog Work](#how-versioning-publishing--changelog-work-in-api-first)
@@ -53,7 +54,8 @@ wendara-ci-actions/
 ├─ README.md
 ├─ scripts/
 │  ├─ clean-ghcr-snapshots.sh              # Clean old GHCR snapshot versions
-│  ├─ read-version.sh                      # Resolve version (env → code/gradle.properties → latest tag)
+│  ├─ read-gradle-version.sh               # Resolve gradle version (env → code/gradle.properties → latest tag)
+│  ├─ read-version-node.sh                  # Resolve package.json version
 │  ├─ bump-gradle-version.sh               # Update code/gradle.properties (used by semantic-release)
 │  ├─ api-first/
 │  │  ├─ api-oasdiff-guard.sh              # OpenAPI semantic diff guard
@@ -66,16 +68,13 @@ wendara-ci-actions/
 │  │  ├─ start-java-integration-env.sh     # Start Docker Compose (Mongo pinned + healthcheck)
 │  │  ├─ run-java-integration-tests.sh     # Run integration tests
 │  │  └─ stop-java-integration-env.sh      # Stop Docker Compose
-│  └─ node/
-│     ├─ node-quality.sh                   # tsc --noEmit, eslint, tests
-│     ├─ build-node-app.sh                 # Build production app
-│     └─ run-node-unit-test.sh             # Run unit tests
 └─ .github/
    └─ workflows/
       ├─ reusable-api-contracts.yml
       ├─ reusable-verify-contracts.yml
-      ├─ reusable-backend.yml              # Java backend CI (Gradle, tests, semantic-release, Jib)
-      ├─ reusable-node-app.yml
+      ├─ reusable-java-backend.yml              # Java backend CI (Gradle, tests, semantic-release, Jib)
+      ├─ reusable-node-mobile.yml
+      ├─ mobile-build.yml
       └─ reusable-manual-post-release.yml
 ```
 
@@ -305,9 +304,10 @@ Reusable CI pipeline for **Node.js** / **TypeScript** apps, including web (React
 **What it does**
 
 1. Runs code quality checks:
-   - `tsc --noEmit`
-   - `eslint`
-   - unit tests (e.g., Jest)
+
+- `tsc --noEmit`
+- `eslint`
+- unit tests (e.g., Jest)
 
 2. (Optional) Runs a production build if `run_build: true`
 
@@ -334,7 +334,7 @@ Reusable CI pipeline for **Node.js** / **TypeScript** apps, including web (React
 **Example usage** (`wendara-web/.github/workflows/ci.yml` or `wendara-mobile/.github/workflows/ci.yml`):
 
 ```yaml
-name: Node App · CI
+name: Mobile · CI
 
 on:
   push:
@@ -344,18 +344,155 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
+  issues: write
+  checks: write
+
+concurrency:
+  group: wendara-mobile-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  node:
-    uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-node-app.yml@main
+  mobile:
+    uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-node-mobile.yml@main
     with:
-      node_version: "20"
-      run_build: false
+      node-version: "20"
+      working-directory: "."
+      release-channel: ${{ github.event_name == 'push' && github.ref_name || '' }}
+      run-build: false
     secrets:
-      REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GPR_USER: ${{ secrets.GPR_USER }}
+      GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 ```
+
+---
+
+### Node Mobile Apps (`reusable-node-mobile.yml`)
+
+Reusable CI pipeline for **React Native** and other Node.js-based mobile apps. Supports linting, type checking,
+unit/integration tests, semantic release, snapshot cleanup, and main→develop sync PRs.
+
+**What it does**
+
+1. Runs code quality checks:
+
+- `npm run lint`
+- `npm run typecheck`
+- `npm test` (unit tests)
+- (Optional) `npm run test:integration` if script exists
+
+2. (Optional) Runs semantic-release for versioning and tagging on `develop`/`main`.
+3. Cleans up old prereleases on `develop` (configurable count).
+4. After stable release on `main`, opens a PR to sync `main` → `develop`.
+
+**Inputs**
+
+| Name                | Type   | Default | Description                                  |
+|---------------------|--------|---------|----------------------------------------------|
+| `release-channel`   | string |         | `develop` or `main`. Empty disables release. |
+| `node-version`      | string | `20`    | Node.js version for setup.                   |
+| `working-directory` | string | `.`     | Directory where `package.json` lives.        |
+| `keep-prereleases`  | number | `10`    | How many prereleases to keep on develop.     |
+
+**Secrets**
+
+| Secret       | Purpose                                 |
+|--------------|-----------------------------------------|
+| `GPR_USER`   | GitHub Packages user (for npm publish). |
+| `GPR_TOKEN`  | GitHub Packages token.                  |
+| `EXPO_TOKEN` | Expo EAS token (optional, for EAS).     |
+
+**Jobs**
+
+| Job                 | Description                                                  |
+|---------------------|--------------------------------------------------------------|
+| `lint`              | Runs `npm run lint`.                                         |
+| `typecheck`         | Runs `npm run typecheck`.                                    |
+| `unit-tests`        | Runs `npm test`.                                             |
+| `integration-tests` | Runs `npm run test:integration` if script exists.            |
+| `release`           | Runs semantic-release for versioning/tags (on develop/main). |
+| `snapshot-cleanup`  | Cleans up old prereleases (develop only).                    |
+| `sync-pr`           | Creates PR to sync main → develop after release (main only). |
+
+**Example usage** (`wendara-mobile/.github/workflows/ci.yml`):
+
+```yaml
+name: Mobile · CI
+
+on:
+  push:
+    branches: [ develop, main ]
+  pull_request:
+    branches: [ develop, main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: write
+
+concurrency:
+  group: wendara-mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mobile:
+    uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-node-mobile.yml@main
+    with:
+      node-version: "20"
+      working-directory: "."
+      release-channel: ${{ github.event_name == 'push' && github.ref_name || '' }}
+      run-build: false
+    secrets:
+      GPR_USER: ${{ secrets.GPR_USER }}
+      GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+```
+
+---
+
+### Mobile Manual Build (`mobile-build.yml`)
+
+Manual workflow to trigger a mobile build for a specific tag and platform using Expo EAS. Intended for on-demand
+builds (e.g., QA, release candidates).
+
+**What it does**
+
+1. Allows manual trigger with inputs: tag, platform (android/ios/all), and EAS profile (dev/prod).
+2. Validates tag format and enforces prod policy (no prerelease tags for prod).
+3. Checks out the repo at the specified tag.
+4. Installs dependencies and verifies build inputs.
+5. Runs EAS build for Android and/or iOS as requested.
+6. Summarizes build results and provides artifact links.
+
+**Inputs**
+
+| Name          | Type   | Required | Description                            |
+|---------------|--------|----------|----------------------------------------|
+| `tag`         | string | yes      | Git tag to build (e.g., v1.2.3).       |
+| `platform`    | choice | yes      | Target platform: android, ios, or all. |
+| `eas-profile` | choice | yes      | EAS build profile: dev or prod.        |
+
+**Secrets**
+
+| Secret       | Purpose                    |
+|--------------|----------------------------|
+| `EXPO_TOKEN` | Expo EAS token for builds. |
+
+**Jobs**
+
+| Job   | Description                                  |
+|-------|----------------------------------------------|
+| build | Runs the EAS build for the selected options. |
+
+**Example usage** (manual trigger):
+
+- Go to the Actions tab in GitHub.
+- Select "Mobile · Build".
+- Click "Run workflow" and fill in the required inputs.
 
 ---
 
@@ -382,19 +519,11 @@ All helper scripts are located under `scripts/` and grouped by domain:
 | `run-java-integration-tests.sh` | Runs integration tests.                                    |
 | `stop-java-integration-env.sh`  | Tears down integration test environment.                   |
 
-### Node (`scripts/node/`)
-
-| Script                  | Purpose                                                            |
-|-------------------------|--------------------------------------------------------------------|
-| `node-quality.sh`       | Runs `tsc --noEmit`, `eslint`, and lints the codebase.             |
-| `run-node-unit-test.sh` | Executes unit tests for Node/TS apps (Jest, Vitest, etc.).         |
-| `build-node-app.sh`     | Builds the app for production (e.g. Next.js build, static export). |
-
 ### Utilities (`scripts/`)
 
 | Script                    | Purpose                                                                                           |
 |---------------------------|---------------------------------------------------------------------------------------------------|
-| `read-version.sh`         | Reads the current release version from `env, code/gradle.properties, latest tag` (in that order). |
+| `read-gradle-version.sh`  | Reads the current release version from `env, code/gradle.properties, latest tag` (in that order). |
 | `bump-gradle-version.sh`  | Writes a version string to `code/gradle.properties` and optionally commits the change.            |
 | `clean-ghcr-snapshots.sh` | Deletes old GHCR Docker image snapshots (retains latest N).                                       |
 
@@ -447,7 +576,7 @@ env:
   ➜ Updates **`docs/CHANGELOG.md`**, creates **tag** and **GitHub Release**.
   ➜ Triggers **sync PR** (main → develop).
 
-**How downstream jobs resolve the version** (`scripts/read-version.sh`):
+**How downstream jobs resolve the version** (`scripts/read-gradle-version.sh`):
 
 1. `VERSION` env var (if provided by the workflow/step).
 2. `code/gradle.properties` (`version = ...`) — source of truth on **main**.
@@ -462,7 +591,7 @@ env:
   id: ver
   env:
     RELEASE_CHANNEL: ${{ inputs.release-channel }}  # "develop" or "main"
-  run: echo "version=$(./scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
+  run: echo "version=$(./scripts/read-gradle-version.sh)" >> "$GITHUB_OUTPUT"
 ```
 
 **Where the Gradle bump happens (main only):**
@@ -503,11 +632,12 @@ reviewers can inspect docs without running anything locally.
 
 ## Using These Workflows Across Repos
 
-| Repo                             | Workflow                     |
-|----------------------------------|------------------------------|
-| `wendara-api-definitions`        | `reusable-api-contracts.yml` |
-| `wendara-backend`                | `reusable-backend.yml`       |
-| `wendara-web` / `wendara-mobile` | `reusable-node-app.yml`      |
+| Repo                      | Workflow                     |
+|---------------------------|------------------------------|
+| `wendara-api-definitions` | `reusable-api-contracts.yml` |
+| `wendara-backend`         | `reusable-java-backend.yml`  |
+| `wendara-mobile`          | `reusable-node-mobile.yml`   |
+| `wendara-mobile`          | `mobile-build.yml`           |
 
 Use `@main` while iterating, and switch to tag or SHA for production stability.
 
@@ -532,18 +662,18 @@ Use `@main` while iterating, and switch to tag or SHA for production stability.
 
 ## Troubleshooting
 
-| Problem                              | Solution                                                                                                                                       |
-|--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Diff guard fails (API)**           | Bump **major** (`v1` → `v2`) and/or increase `info.version` appropriately, then re-run.                                                        |
-| **Redoc artifact missing (API)**     | Ensure `run_redoc: true` and a valid `.redocly.yaml` in the consumer repo root.                                                                |
-| **Nothing published (API)**          | Check `publish_enabled`; verify the spec actually changed and that the API is whitelisted (if enabled).                                        |
-| **Changelog not generated (API)**    | Ensure you use **Conventional Commits** and that the changelog step ran successfully.                                                          |
-| **Coverage ran twice**               | By design, coverage now runs **only** in `unit-tests`. `quality-checks` is **static-only** (Checkstyle/PMD/SpotBugs).                          |
-| **Compose up but ITs flaky**         | Pin Mongo image (e.g., `mongo:7.0`) and add a **healthcheck**; wait for **healthy** before running ITs.                                        |
-| **Version empty in docker step**     | Ensure the `release` job completed, `actions/checkout` used `fetch-depth: 0`, and `read-version.sh` can see `code/gradle.properties` or a tag. |
-| **Changelog not updated on develop** | Intentional. Only **main** updates `docs/CHANGELOG.md` and creates a GitHub Release.                                                           |
-| **OWASP step skipped**               | Runs only on **main**, after release, and only if a version was resolved (report-only).                                                        |
-| **Sync PR not created**              | Happens if no new commits landed on `main` or the release did not produce a new tag.                                                           |
-| **Gradle version not bumped (main)** | Check `scripts/bump-gradle-version.sh` exists and is executable; verify `@semantic-release/exec` is configured in the **main** config.         |
-| **Git tags not found**               | Use `actions/checkout@v4` with `fetch-depth: 0` (or fetch tags before calling `read-version.sh`).                                              |
-| **Image not pushed (backend)**       | Confirm GHCR login, `packages: write` permission, and Jib params (`-Pversion=...`) are set correctly.                                          |
+| Problem                              | Solution                                                                                                                                              |
+|--------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Diff guard fails (API)**           | Bump **major** (`v1` → `v2`) and/or increase `info.version` appropriately, then re-run.                                                               |
+| **Redoc artifact missing (API)**     | Ensure `run_redoc: true` and a valid `.redocly.yaml` in the consumer repo root.                                                                       |
+| **Nothing published (API)**          | Check `publish_enabled`; verify the spec actually changed and that the API is whitelisted (if enabled).                                               |
+| **Changelog not generated (API)**    | Ensure you use **Conventional Commits** and that the changelog step ran successfully.                                                                 |
+| **Coverage ran twice**               | By design, coverage now runs **only** in `unit-tests`. `quality-checks` is **static-only** (Checkstyle/PMD/SpotBugs).                                 |
+| **Compose up but ITs flaky**         | Pin Mongo image (e.g., `mongo:7.0`) and add a **healthcheck**; wait for **healthy** before running ITs.                                               |
+| **Version empty in docker step**     | Ensure the `release` job completed, `actions/checkout` used `fetch-depth: 0`, and `read-gradle-version.sh` can see `code/gradle.properties` or a tag. |
+| **Changelog not updated on develop** | Intentional. Only **main** updates `docs/CHANGELOG.md` and creates a GitHub Release.                                                                  |
+| **OWASP step skipped**               | Runs only on **main**, after release, and only if a version was resolved (report-only).                                                               |
+| **Sync PR not created**              | Happens if no new commits landed on `main` or the release did not produce a new tag.                                                                  |
+| **Gradle version not bumped (main)** | Check `scripts/bump-gradle-version.sh` exists and is executable; verify `@semantic-release/exec` is configured in the **main** config.                |
+| **Git tags not found**               | Use `actions/checkout@v4` with `fetch-depth: 0` (or fetch tags before calling `read-gradle-version.sh`).                                              |
+| **Image not pushed (backend)**       | Confirm GHCR login, `packages: write` permission, and Jib params (`-Pversion=...`) are set correctly.                                                 |

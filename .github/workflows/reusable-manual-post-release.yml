@@ -22,7 +22,7 @@
 # Usage Example:
 #   To call this workflow from another repo, use workflow_call and provide the required inputs/secrets.
 #   All scripts are invoked using their relative path from the repo root, e.g.:
-#     .wendara-ci-actions/scripts/read-version.sh
+#     .wendara-ci-actions/scripts/read-gradle-version.sh
 #     .wendara-ci-actions/scripts/clean-ghcr-snapshots.sh
 #
 # Jobs Overview:
@@ -117,7 +117,7 @@ jobs:
         env:
           RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
-          V="$(.wendara-ci-actions/scripts/read-version.sh | tr -d '\r\n' || true)"
+          V="$(.wendara-ci-actions/scripts/read-gradle-version.sh | tr -d '\r\n' || true)"
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "VERSION=$V" >> "$GITHUB_ENV"
           if [ -z "$V" ]; then

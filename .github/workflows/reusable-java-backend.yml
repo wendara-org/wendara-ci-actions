@@ -325,7 +325,7 @@ jobs:
         run: |
           git fetch --tags --force --quiet || true
           PRE_V="$(
-            ./.wendara-ci-actions/scripts/read-version.sh | tr -d '\r\n'
+            ./.wendara-ci-actions/scripts/read-gradle-version.sh | tr -d '\r\n'
           )"
           echo "pre_version=${PRE_V}" >> "$GITHUB_OUTPUT"
           echo "PRE_VERSION=${PRE_V}" >> "$GITHUB_ENV"
@@ -345,7 +345,7 @@ jobs:
         run: |
           git fetch --tags --force --quiet || true
           POST_V="$(
-            ./.wendara-ci-actions/scripts/read-version.sh | tr -d '\r\n'
+            ./.wendara-ci-actions/scripts/read-gradle-version.sh | tr -d '\r\n'
           )"
           echo "post_version=${POST_V}" >> "$GITHUB_OUTPUT"
           echo "POST_VERSION=${POST_V}" >> "$GITHUB_ENV"
@@ -418,7 +418,7 @@ jobs:
       # Fallback resolver in case released_version is empty for any reason
       - name: Resolve VERSION (fallback)
         id: ver
-        run: echo "version=$(.wendara-ci-actions/scripts/read-version.sh | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(.wendara-ci-actions/scripts/read-gradle-version.sh | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
 
       - name: Validate VERSION
         run: |
@@ -462,7 +462,7 @@ jobs:
       # Fallback resolver in case released_version is empty for any reason
       - name: Resolve VERSION (fallback)
         id: ver
-        run: echo "version=$(.wendara-ci-actions/scripts/read-version.sh | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(.wendara-ci-actions/scripts/read-gradle-version.sh | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
 
       - name: Validate VERSION
         run: |
@@ -514,7 +514,7 @@ jobs:
       # Fallback resolver in case released_version is empty
       - name: Resolve VERSION (fallback)
         id: ver
-        run: echo "version=$(.wendara-ci-actions/scripts/read-version.sh | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(.wendara-ci-actions/scripts/read-gradle-version.sh | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
 
       - name: Validate VERSION
         id: version

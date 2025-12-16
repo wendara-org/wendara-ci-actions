@@ -1,0 +1,486 @@
+name: Reusable Node Mobile CI
+
+on:
+  workflow_call:
+    inputs:
+      release-channel:
+        description: "Which channel is being built (develop or main). Empty disables release."
+        required: true
+        type: string
+      node-version:
+        description: "Node version to use"
+        required: false
+        default: "20"
+        type: string
+      working-directory:
+        description: "Working directory where package.json lives"
+        required: false
+        default: "."
+        type: string
+      keep-prereleases:
+        description: "How many prereleases to keep on develop"
+        required: false
+        default: 10
+        type: number
+
+    secrets:
+      GPR_USER:
+        required: true
+      GPR_TOKEN:
+        required: true
+      EXPO_TOKEN:
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: write
+
+concurrency:
+  group: wendara-node-mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: true
+  # GitHub Packages (Maven) via PAT stored as secrets in the caller repo
+  GPR_USER: ${{ secrets.GPR_USER }}
+  GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+  # Standard GitHub-provided context (used by GHCR, releases, etc.)
+  GITHUB_ACTOR: ${{ github.actor }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout ci-actions (scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: wendara-org/wendara-ci-actions
+          path: .wendara-ci-actions
+          ref: main
+
+      - name: Make scripts executable
+        run: chmod -R +x .wendara-ci-actions/scripts
+
+      - name: Set up Node (with npm cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Prepare npm userconfig for CI (GitHub Packages + npmjs)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "registry=https://registry.npmjs.org/" > .npmrc.ci
+          echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
+          TOKEN="${{ secrets.GPR_TOKEN }}"
+          if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
+          echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
+          cat .npmrc.ci
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ inputs.working-directory }}/.npmrc.ci
+
+      - name: Run lint
+        run: npm run lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout ci-actions (scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: wendara-org/wendara-ci-actions
+          path: .wendara-ci-actions
+          ref: main
+
+      - name: Make scripts executable
+        run: chmod -R +x .wendara-ci-actions/scripts
+
+      - name: Set up Node (with npm cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Prepare npm userconfig for CI (GitHub Packages + npmjs)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "registry=https://registry.npmjs.org/" > .npmrc.ci
+          echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
+          TOKEN="${{ secrets.GPR_TOKEN }}"
+          if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
+          echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
+          cat .npmrc.ci
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ inputs.working-directory }}/.npmrc.ci
+
+      - name: Run typecheck
+        run: npm run typecheck
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout ci-actions (scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: wendara-org/wendara-ci-actions
+          path: .wendara-ci-actions
+          ref: main
+
+      - name: Make scripts executable
+        run: chmod -R +x .wendara-ci-actions/scripts
+
+      - name: Set up Node (with npm cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Prepare npm userconfig for CI (GitHub Packages + npmjs)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "registry=https://registry.npmjs.org/" > .npmrc.ci
+          echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
+          TOKEN="${{ secrets.GPR_TOKEN }}"
+          if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
+          echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
+          cat .npmrc.ci
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ inputs.working-directory }}/.npmrc.ci
+
+      - name: Run unit tests
+        run: npm test
+
+  integration-tests:
+    name: Integration tests (optional)
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck]
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node (with npm cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration tests if script exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts['test:integration'] ? 0 : 1)"; then
+            npm run test:integration
+          else
+            echo "ℹ️ No test:integration script found. Skipping."
+          fi
+
+  release:
+    name: Semantic release (tags/releases)
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, unit-tests]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && inputs.release-channel != ''
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    outputs:
+      published: ${{ steps.post.outputs.published }}
+      released_version: ${{ steps.post.outputs.released_version }}
+      tag: ${{ steps.post.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout ci-actions (scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: wendara-org/wendara-ci-actions
+          path: .wendara-ci-actions
+          ref: main
+
+      - name: Make scripts executable
+        run: chmod -R +x .wendara-ci-actions/scripts
+
+      - name: Set up Node (with npm cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Prepare npm userconfig for CI (GitHub Packages + npmjs)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "registry=https://registry.npmjs.org/" > .npmrc.ci
+          echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
+          TOKEN="${{ secrets.GPR_TOKEN }}"
+          if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
+          echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
+          cat .npmrc.ci
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ inputs.working-directory }}/.npmrc.ci
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Resolve PRE version (package.json)
+        id: pre
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRE_V="$(
+            ./.wendara-ci-actions/scripts/read-version-node.sh | tr -d '\r\n'
+          )"
+          echo "pre_version=${PRE_V}" >> "$GITHUB_OUTPUT"
+          echo "PRE_VERSION=${PRE_V}" >> "$GITHUB_ENV"
+          echo "🔎 PRE_VERSION=${PRE_V}"
+
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_CHANNEL: ${{ inputs.release-channel }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npm run release
+
+      - name: Post-capture version & set outputs
+        id: post
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force --quiet || true
+          POST_V="$(
+            ./.wendara-ci-actions/scripts/read-version-node.sh | tr -d '\r\n'
+          )"
+          TAG="v${POST_V}"
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          PRE="${PRE_VERSION:-}"
+          POST="${POST_V:-}"
+
+          if { [ -n "$PRE" ] && [ -n "$POST" ] && [ "$POST" != "$PRE" ]; } || { [ -z "$PRE" ] && [ -n "$POST" ]; }; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "released_version=${POST}" >> "$GITHUB_OUTPUT"
+            echo "✅ Release detected (published=true). Version='${POST}' Tag='${TAG}'"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "released_version=" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ No release detected (published=false)."
+          fi
+
+  snapshot-cleanup:
+    name: Snapshot cleanup (develop prereleases)
+    runs-on: ubuntu-latest
+    needs: release
+    if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'develop' }}
+    steps:
+      - name: Cleanup old prereleases (keep last N)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEEP: ${{ inputs.keep-prereleases }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Keeping last '${KEEP}' prereleases for '${REPO}'..."
+
+          # Fetch releases safely (first-run / no releases => empty array)
+          releases_json="$(gh api -H "Accept: application/vnd.github+json" "/repos/${REPO}/releases?per_page=100" 2>/dev/null || echo '[]')"
+
+          # Extract prerelease IDs (safe if none exist)
+          prerelease_ids="$(echo "$releases_json" | jq -r '.[] | select(.prerelease==true) | .id' 2>/dev/null || true)"
+
+          # Nothing to clean → exit successfully
+          if [ -z "${prerelease_ids// }" ]; then
+            echo "ℹ️ No prereleases found. Nothing to delete."
+            exit 0
+          fi
+
+          count=0
+          echo "$prerelease_ids" | while read -r rid; do
+            [ -z "$rid" ] && continue
+            count=$((count+1))
+
+            if [ "$count" -le "$KEEP" ]; then
+              echo "✅ Keeping prerelease id='${rid}'"
+            else
+              echo "🧹 Deleting prerelease id='${rid}'"
+              # Best-effort delete: never fail the pipeline
+              gh api -X DELETE -H "Accept: application/vnd.github+json" "/repos/${REPO}/releases/${rid}" || true
+            fi
+          done
+
+  sync-pr:
+    name: Sync PR main → develop
+    runs-on: ubuntu-latest
+    needs: release
+    if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'main' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout ci-actions (scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: wendara-org/wendara-ci-actions
+          path: .wendara-ci-actions
+          ref: main
+
+      - name: Make scripts executable
+        run: chmod -R +x .wendara-ci-actions/scripts
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Resolve VERSION (fallback)
+        id: ver
+        run: echo "version=$(.wendara-ci-actions/scripts/read-version-node.sh | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
+
+      - name: Validate VERSION
+        id: version
+        run: |
+          VERSION="${{ needs.release.outputs.released_version || steps.ver.outputs.version }}"
+          if [ -z "$VERSION" ]; then
+            echo "❌ VERSION is empty. Aborting sync PR."
+            exit 1
+          fi
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare sync branch and merge
+        id: merge
+        run: |
+          set -euo pipefail
+          git fetch origin main develop
+
+          SYNC_BRANCH="sync-release-${{ steps.version.outputs.value }}"
+          echo "branch=$SYNC_BRANCH" >> "$GITHUB_OUTPUT"
+
+          git checkout -b "$SYNC_BRANCH" origin/develop
+
+          git merge -s ours --no-ff origin/main -m "chore(sync): record main tip in develop history after v${{ steps.version.outputs.value }}"
+
+          if git diff-tree --quiet origin/develop HEAD; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push directly to develop (history sync only)
+        if: steps.merge.outputs.has_changes == 'false'
+        run: |
+          git push origin HEAD:develop
+          echo "✅ Pushed merge commit directly to develop (history sync only)"
+
+      - name: Create sync PR (if there are content changes)
+        if: steps.merge.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SYNC_BRANCH="${{ steps.merge.outputs.branch }}"
+          git push -f origin "$SYNC_BRANCH"
+
+          existing_pr=$(gh pr list --head "$SYNC_BRANCH" --base develop --json number --jq '.[0].number')
+
+          if [ -n "$existing_pr" ]; then
+            echo "✅ PR #$existing_pr already exists"
+          else
+            gh pr create \
+              --base develop \
+              --head "$SYNC_BRANCH" \
+              --title "chore: sync main → develop after v${{ steps.version.outputs.value }}" \
+              --body "$(cat <<EOF
+          ## 🔄 Sync after release v${{ steps.version.outputs.value }}
+
+          Automated PR to merge changes from **main** back into **develop** after semantic-release.
+
+          ⚠️ This PR contains actual content changes that need review.
+
+          **Released version:** \`${{ steps.version.outputs.value }}\`
+          **Source:** \`main\`
+          **Target:** \`develop\`
+          EOF
+              )" \
+              --label chore \
+              --label sync
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ steps.merge.outputs.has_changes }}" == "false" ]; then
+            echo "✅ Version ${{ steps.version.outputs.value }}: Pushed merge commit directly to develop"
+          elif [ "${{ steps.merge.outputs.has_changes }}" == "true" ]; then
+            echo "📝 Version ${{ steps.version.outputs.value }}: Created PR with content changes"
+          fi

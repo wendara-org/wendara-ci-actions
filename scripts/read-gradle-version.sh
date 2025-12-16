@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/read-version.sh
+# scripts/read-gradle-version.sh
 #
 # Purpose:
 #   Resolve the build VERSION in this order:

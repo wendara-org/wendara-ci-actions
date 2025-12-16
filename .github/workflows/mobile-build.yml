@@ -1,0 +1,190 @@
+name: Mobile · Build (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Git tag to build (examples: v1.2.3 | v1.2.3-develop.4)"
+        required: true
+        type: string
+      platform:
+        description: "Target platform (android | ios | all)"
+        required: true
+        type: string
+      eas-profile:
+        description: "EAS build profile (dev | prod)"
+        required: true
+        type: string
+    secrets:
+      EXPO_TOKEN:
+        required: true
+      GPR_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wendara-mobile-build-${{ inputs.tag }}-${{ inputs.platform }}-${{ inputs.eas-profile }}
+  cancel-in-progress: false
+
+env:
+  CI: true
+  WENDARA_APP_VARIANT: ${{ inputs.eas-profile }}
+
+jobs:
+  build:
+    name: Build (${{ inputs.platform }}) · ${{ inputs.tag }} · ${{ inputs.eas-profile }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository at tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      - name: Validate inputs (tag format + prod policy)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ inputs.tag }}"
+          PROFILE="${{ inputs.eas-profile }}"
+
+          # 1) Enforce tagFormat: v${version}
+          if [[ ! "$TAG" =~ ^v[0-9]+(\.[0-9]+){2}([\-][0-9A-Za-z\.\-]+)?$ ]]; then
+            echo "❌ Invalid tag format: '$TAG'"
+            echo "Expected examples:"
+            echo " - v1.2.3"
+            echo " - v1.2.3-develop.4"
+            exit 1
+          fi
+
+          # 2) Prevent prod builds from prerelease tags (e.g., -develop.N)
+          if [[ "$PROFILE" == "prod" && "$TAG" == *"-develop."* ]]; then
+            echo "❌ Policy violation: profile 'prod' cannot build prerelease tags."
+            echo "Tag provided: '$TAG'"
+            echo "Allowed examples for prod:"
+            echo " - v1.2.3"
+            echo "Not allowed for prod:"
+            echo " - v1.2.3-develop.4"
+            exit 1
+          fi
+
+          echo "✅ Inputs OK. TAG='$TAG' PROFILE='$PROFILE'"
+
+      - name: Validate tag exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force --quiet || true
+          if ! git rev-parse -q --verify "refs/tags/${{ inputs.tag }}" >/dev/null; then
+            echo "❌ Tag '${{ inputs.tag }}' not found."
+            echo "Available tags (latest 20):"
+            git tag --sort=-creatordate | head -n 20 || true
+            exit 1
+          fi
+          echo "✅ Building tag '${{ inputs.tag }}'"
+
+      - name: Set up Node (with npm cache)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Prepare npm userconfig for CI (GitHub Packages + npmjs)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "registry=https://registry.npmjs.org/" > .npmrc.ci
+          echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GPR_TOKEN }}" >> .npmrc.ci
+          echo "✅ .npmrc.ci configured (GitHub Packages + npmjs)"
+          # Do not print tokenized file content.
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          NPM_CONFIG_USERCONFIG: ./.npmrc.ci
+
+      - name: Verify build inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "EAS_PROFILE=${{ inputs.eas-profile }}"
+          echo "PLATFORM=${{ inputs.platform }}"
+          echo "TAG=${{ inputs.tag }}"
+          echo "WENDARA_APP_VARIANT=${WENDARA_APP_VARIANT}"
+          echo "package.json version=$(node -p "require('./package.json').version")"
+
+          if [ ! -f "eas.json" ]; then
+            echo "❌ eas.json not found at repo root."
+            exit 1
+          fi
+
+      - name: Set up EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build Android (EAS)
+        id: build_android
+        if: ${{ inputs.platform == 'android' || inputs.platform == 'all' }}
+        shell: bash
+        env:
+          EAS_NO_VCS: 1
+        run: |
+          set -euo pipefail
+          OUT="$(eas build --platform android --profile "${{ inputs.eas-profile }}" --non-interactive --wait --json)"
+          echo "$OUT" > eas-android.json
+
+          URL="$(echo "$OUT" | jq -r '.[0].buildDetailsPageUrl // empty')"
+          if [ -z "${URL:-}" ]; then
+            URL="$(echo "$OUT" | jq -r '.[0].buildUrl // empty' || true)"
+          fi
+
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "✅ Android build URL: ${URL:-'(not available)'}"
+
+      - name: Build iOS (EAS)
+        id: build_ios
+        if: ${{ inputs.platform == 'ios' || inputs.platform == 'all' }}
+        shell: bash
+        env:
+          EAS_NO_VCS: 1
+        run: |
+          set -euo pipefail
+          OUT="$(eas build --platform ios --profile "${{ inputs.eas-profile }}" --non-interactive --wait --json)"
+          echo "$OUT" > eas-ios.json
+
+          URL="$(echo "$OUT" | jq -r '.[0].buildDetailsPageUrl // empty')"
+          if [ -z "${URL:-}" ]; then
+            URL="$(echo "$OUT" | jq -r '.[0].buildUrl // empty' || true)"
+          fi
+
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "✅ iOS build URL: ${URL:-'(not available)'}"
+
+      - name: Build summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## 📦 Mobile Build Summary"
+            echo ""
+            echo "- **Tag:** \`${{ inputs.tag }}\` (examples: \`v1.2.3\`, \`v1.2.3-develop.4\`)"
+            echo "- **Platform:** \`${{ inputs.platform }}\` (android|ios|all)"
+            echo "- **EAS profile:** \`${{ inputs.eas-profile }}\` (dev|prod)"
+            echo "- **Variant:** \`${WENDARA_APP_VARIANT}\`"
+            echo ""
+            if [ "${{ inputs.platform }}" = "android" ] || [ "${{ inputs.platform }}" = "all" ]; then
+              echo "- **Android build:** ${{ steps.build_android.outputs.url }}"
+            fi
+            if [ "${{ inputs.platform }}" = "ios" ] || [ "${{ inputs.platform }}" = "all" ]; then
+              echo "- **iOS build:** ${{ steps.build_ios.outputs.url }}"
+            fi
+            echo ""
+            echo "Artifacts are generated in EAS. Use the links above to download them manually."
+          } >> "$GITHUB_STEP_SUMMARY"
