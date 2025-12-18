@@ -20,6 +20,8 @@ on:
         required: true
       GPR_TOKEN:
         required: true
+      GPR_USER:
+        required: false
 
 permissions:
   contents: read
