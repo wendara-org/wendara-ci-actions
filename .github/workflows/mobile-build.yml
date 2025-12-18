@@ -26,10 +26,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: wendara-mobile-build-${{ inputs.tag }}-${{ inputs.platform }}-${{ inputs.eas-profile }}
-  cancel-in-progress: false
-
 env:
   CI: true
   WENDARA_APP_VARIANT: ${{ inputs.eas-profile }}
