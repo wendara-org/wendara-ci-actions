@@ -34,6 +34,7 @@ jobs:
   build:
     name: Build (${{ inputs.platform }}) · ${{ inputs.tag }} · ${{ inputs.eas-profile }}
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository at tag
         uses: actions/checkout@v4
@@ -135,16 +136,22 @@ jobs:
           EAS_NO_VCS: 1
         run: |
           set -euo pipefail
+
           OUT="$(eas build --platform android --profile "${{ inputs.eas-profile }}" --non-interactive --wait --json)"
           echo "$OUT" > eas-android.json
 
-          URL="$(echo "$OUT" | jq -r '.[0].buildDetailsPageUrl // empty')"
-          if [ -z "${URL:-}" ]; then
-            URL="$(echo "$OUT" | jq -r '.[0].buildUrl // empty' || true)"
-          fi
+          ID="$(echo "$OUT" | jq -r '.[0].id // empty')"
+          DETAILS_URL="$(echo "$OUT" | jq -r '.[0].buildDetailsPageUrl // .[0].buildUrl // empty')"
+          ARTIFACT_URL="$(echo "$OUT" | jq -r '.[0].artifacts.buildUrl // .[0].artifacts.applicationArchiveUrl // empty')"
 
-          echo "url=${URL}" >> "$GITHUB_OUTPUT"
-          echo "✅ Android build URL: ${URL:-'(not available)'}"
+          echo "id=${ID}" >> "$GITHUB_OUTPUT"
+          echo "details_url=${DETAILS_URL}" >> "$GITHUB_OUTPUT"
+          echo "artifact_url=${ARTIFACT_URL}" >> "$GITHUB_OUTPUT"
+
+          echo "✅ Android build:"
+          echo "  id=${ID:-'(n/a)'}"
+          echo "  details=${DETAILS_URL:-'(n/a)'}"
+          echo "  artifact=${ARTIFACT_URL:-'(n/a)'}"
 
       - name: Build iOS (EAS)
         id: build_ios
@@ -154,35 +161,92 @@ jobs:
           EAS_NO_VCS: 1
         run: |
           set -euo pipefail
+
           OUT="$(eas build --platform ios --profile "${{ inputs.eas-profile }}" --non-interactive --wait --json)"
           echo "$OUT" > eas-ios.json
 
-          URL="$(echo "$OUT" | jq -r '.[0].buildDetailsPageUrl // empty')"
-          if [ -z "${URL:-}" ]; then
-            URL="$(echo "$OUT" | jq -r '.[0].buildUrl // empty' || true)"
-          fi
+          ID="$(echo "$OUT" | jq -r '.[0].id // empty')"
+          DETAILS_URL="$(echo "$OUT" | jq -r '.[0].buildDetailsPageUrl // .[0].buildUrl // empty')"
+          ARTIFACT_URL="$(echo "$OUT" | jq -r '.[0].artifacts.buildUrl // .[0].artifacts.applicationArchiveUrl // empty')"
 
-          echo "url=${URL}" >> "$GITHUB_OUTPUT"
-          echo "✅ iOS build URL: ${URL:-'(not available)'}"
+          echo "id=${ID}" >> "$GITHUB_OUTPUT"
+          echo "details_url=${DETAILS_URL}" >> "$GITHUB_OUTPUT"
+          echo "artifact_url=${ARTIFACT_URL}" >> "$GITHUB_OUTPUT"
+
+          echo "✅ iOS build:"
+          echo "  id=${ID:-'(n/a)'}"
+          echo "  details=${DETAILS_URL:-'(n/a)'}"
+          echo "  artifact=${ARTIFACT_URL:-'(n/a)'}"
+
+      - name: Upload EAS outputs (JSON)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eas-json-${{ inputs.tag }}-${{ inputs.platform }}-${{ inputs.eas-profile }}
+          path: |
+            eas-android.json
+            eas-ios.json
+          if-no-files-found: ignore
 
       - name: Build summary
         if: always()
         shell: bash
         run: |
+          set -euo pipefail
+
+          # Fallback readers (if outputs are empty for any reason)
+          android_details="${{ steps.build_android.outputs.details_url }}"
+          android_artifact="${{ steps.build_android.outputs.artifact_url }}"
+          android_id="${{ steps.build_android.outputs.id }}"
+
+          ios_details="${{ steps.build_ios.outputs.details_url }}"
+          ios_artifact="${{ steps.build_ios.outputs.artifact_url }}"
+          ios_id="${{ steps.build_ios.outputs.id }}"
+
+          if [ -z "${android_details:-}" ] && [ -f "eas-android.json" ]; then
+            android_details="$(jq -r '.[0].buildDetailsPageUrl // .[0].buildUrl // empty' eas-android.json || true)"
+          fi
+          if [ -z "${android_artifact:-}" ] && [ -f "eas-android.json" ]; then
+            android_artifact="$(jq -r '.[0].artifacts.buildUrl // .[0].artifacts.applicationArchiveUrl // empty' eas-android.json || true)"
+          fi
+          if [ -z "${android_id:-}" ] && [ -f "eas-android.json" ]; then
+            android_id="$(jq -r '.[0].id // empty' eas-android.json || true)"
+          fi
+
+          if [ -z "${ios_details:-}" ] && [ -f "eas-ios.json" ]; then
+            ios_details="$(jq -r '.[0].buildDetailsPageUrl // .[0].buildUrl // empty' eas-ios.json || true)"
+          fi
+          if [ -z "${ios_artifact:-}" ] && [ -f "eas-ios.json" ]; then
+            ios_artifact="$(jq -r '.[0].artifacts.buildUrl // .[0].artifacts.applicationArchiveUrl // empty' eas-ios.json || true)"
+          fi
+          if [ -z "${ios_id:-}" ] && [ -f "eas-ios.json" ]; then
+            ios_id="$(jq -r '.[0].id // empty' eas-ios.json || true)"
+          fi
+
           {
             echo "## 📦 Mobile Build Summary"
             echo ""
-            echo "- **Tag:** \`${{ inputs.tag }}\` (examples: \`v1.2.3\`, \`v1.2.3-develop.4\`)"
-            echo "- **Platform:** \`${{ inputs.platform }}\` (android|ios|all)"
-            echo "- **EAS profile:** \`${{ inputs.eas-profile }}\` (dev|prod)"
+            echo "- **Tag:** \`${{ inputs.tag }}\`"
+            echo "- **Platform:** \`${{ inputs.platform }}\`"
+            echo "- **EAS profile:** \`${{ inputs.eas-profile }}\`"
             echo "- **Variant:** \`${WENDARA_APP_VARIANT}\`"
             echo ""
+
             if [ "${{ inputs.platform }}" = "android" ] || [ "${{ inputs.platform }}" = "all" ]; then
-              echo "- **Android build:** ${{ steps.build_android.outputs.url }}"
+              echo "### 🤖 Android"
+              echo "- **EAS build page:** ${android_details:-'(not available)'}"
+              echo "- **Direct download (APK/AAB):** ${android_artifact:-'(not available — use the EAS build page)'}"
+              echo "- **Build id:** \`${android_id:-'(n/a)'}\`"
+              echo ""
             fi
+
             if [ "${{ inputs.platform }}" = "ios" ] || [ "${{ inputs.platform }}" = "all" ]; then
-              echo "- **iOS build:** ${{ steps.build_ios.outputs.url }}"
+              echo "### 🍏 iOS"
+              echo "- **EAS build page:** ${ios_details:-'(not available)'}"
+              echo "- **Direct download (IPA):** ${ios_artifact:-'(not available — use the EAS build page)'}"
+              echo "- **Build id:** \`${ios_id:-'(n/a)'}\`"
+              echo ""
             fi
-            echo ""
-            echo "Artifacts are generated in EAS. Use the links above to download them manually."
+
+            echo "Artifacts are generated in EAS. If direct download is missing, open the EAS build page and download from there."
           } >> "$GITHUB_STEP_SUMMARY"
