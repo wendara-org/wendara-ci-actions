@@ -2,14 +2,15 @@
 #
 # Reusable workflow for API-first repositories (e.g., wendara-api-definitions).
 # It validates OpenAPI contracts, enforces semantic versioning with an OAS diff guard,
-# optionally generates Redoc HTML previews, publishes only CHANGED APIs as artifacts,
-# and after a stable release on main, opens an automatic sync PR main → develop.
+# optionally generates Redoc HTML previews, publishes only CHANGED APIs as artifacts
+# to BOTH distribution channels (Maven + npm), and after a stable release on main,
+# syncs main → develop (push history merge if no changes, otherwise PR).
 #
 # Inputs (set by the caller workflow):
-#   - java_version: string (default "21")      -> Java toolchain for Gradle tasks
-#   - node_version: string (default "22")      -> Node.js version for Redoc/linters
-#   - run_redoc: boolean (default true)        -> Build Redoc previews if true
-#   - publish_enabled: boolean (default false) -> Publish artifacts if true (use on push, not on PR)
+#   - java_version: string (default "21")         -> Java toolchain for Gradle tasks (Maven publishing)
+#   - node_version: string (default "22")         -> Node.js version for Redoc/linters + npm publishing
+#   - run_redoc: boolean (default true)           -> Build Redoc previews if true
+#   - publish_enabled: boolean (default false)    -> Publish artifacts if true (use on push, not on PR)
 #   - require_listed_only: boolean (default true) -> If true, only APIs present in root metadata.yml are eligible
 #
 # Secrets (provided by the caller):
@@ -18,35 +19,32 @@
 # Outputs:
 #   - changed_specs: space-separated list of changed openapi.yaml paths
 #   - any_changed: "true"/"false"
-#   - released: "true"/"false" (only true when publishing stable on main)
+#   - released: "true"/"false" (true only when publishing on main AND at least one artifact was published)
+#   - release_channel: "RELEASE"|"SNAPSHOT" (derived from branch name; main => RELEASE)
 #
 # Notes:
 # - This workflow assumes the consumer repo has:
-#     apis/<transport>/<apiName>/<major>/openapi.yaml
+#     apis/<apiName>/<transport>/<apiVersion>/openapi.yaml
 #     (optional) per-API metadata.yml next to each spec
-#     (optional) root metadata.yml at repo root (as a whitelist index)
+#     (optional) root metadata.yml at repo root (whitelist index)
 #     (optional) .redocly.yaml at repo root
-# - All helper scripts are available under the scripts/ directory in this repository.
-# - External dependencies required by some scripts:
+# - Publishing channels:
+#     1) Maven (GitHub Packages Maven Registry): zip contracts (Gradle-driven from consumer repo)
+#     2) npm   (GitHub Packages npm Registry):  contracts package (script-driven from ci-actions)
+# - External dependencies required by some steps:
 #     - oasdiff (CLI binary, installed in the runner)
 #     - yq (mikefarah, for YAML parsing)
 #     - reviewdog (for PR annotations)
-#
-# Usage Example:
-#   To call this workflow from another repo, use workflow_call and provide the required inputs/secrets.
-#   All scripts are invoked using their relative path from the repo root, e.g.:
-#     scripts/api-first/api-oasdiff-guard.sh origin/main HEAD apis/emotion-journal/openapi.yaml
-#     scripts/api-first/redoc-build.sh <spec> <output.html>
 #
 # Jobs Overview:
 #   - detect: Detects changed OpenAPI specs and metadata.
 #   - validate: Lints specs and checks Conventional Commits.
 #   - guard: Enforces semantic versioning using oasdiff.
 #   - redoc: Optionally builds Redoc HTML previews for changed specs.
-#   - publish: Publishes changed specs as Maven artifacts (if enabled).
-#   - sync: After stable publish, opens a PR to sync main → develop.
-#
-# For more details, see the README.md in this repository
+#   - publish_maven: Publishes changed specs as Maven artifacts (zip) to GitHub Packages.
+#   - publish_npm: Publishes changed specs as npm packages to GitHub Packages.
+#   - release_gate: Single source of truth for outputs (released + release_channel).
+#   - sync: After stable publish, syncs main → develop.
 
 name: Reusable · API Contracts
 
@@ -90,7 +88,10 @@ on:
         value: ${{ jobs.detect.outputs.any_changed }}
       released:
         description: "Whether we published a stable release on main"
-        value: ${{ jobs.publish.outputs.released }}
+        value: ${{ jobs.release_gate.outputs.released }}
+      release_channel:
+        description: "Derived release channel (RELEASE on main, SNAPSHOT otherwise)"
+        value: ${{ jobs.release_gate.outputs.release_channel }}
 
 permissions:
   contents: read
@@ -100,8 +101,8 @@ permissions:
 jobs:
 
   detect:
-    # Detect which API specs changed in this push/PR.
-    # The result is a space-separated list of apis/*/*/*/openapi.yaml.
+    # Detect which OpenAPI specs changed in this push/PR.
+    # Output is a space-separated list of: apis/*/*/*/openapi.yaml
     name: Detect changed API specs
     runs-on: ubuntu-latest
     env:
@@ -115,7 +116,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: List changed files (OpenAPI specs + per-API metadata + root metadata + redoc config)
+      - name: List changed files (specs + per-API metadata + root metadata + redoc config)
         id: changed
         uses: tj-actions/changed-files@v44
         with:
@@ -149,12 +150,12 @@ jobs:
             fi
           done
 
-          # 2) Per-API metadata.yml: include ONLY if version changed
+          # 2) Per-API metadata.yml: include ONLY if "version" changed (legacy metadata schema support)
           VERSION_BUMP_SPECS=()
           for meta in ${{ steps.changed.outputs.all_changed_files }}; do
             if [[ "$meta" == apis/*/*/*/metadata.yml ]]; then
-              old_ver="$(git show "${BASE_REF}:${meta}" 2>/dev/null | yq '.version' || true)"
-              new_ver="$(yq '.version' "$meta" || true)"
+              old_ver="$(git show "${BASE_REF}:${meta}" 2>/dev/null | yq -r '.version // empty' || true)"
+              new_ver="$(yq -r '.version // empty' "$meta" || true)"
               if [[ -n "$old_ver" && -n "$new_ver" && "$old_ver" != "$new_ver" ]]; then
                 api_dir="$(dirname "$meta")"
                 if [[ -f "$api_dir/openapi.yaml" ]]; then
@@ -164,8 +165,8 @@ jobs:
             fi
           done
 
-          # 3) NEVER expand all specs when root metadata.yml changes.
-          #    Root index may affect whitelist, but should not force republish by itself.
+          # 3) Root metadata.yml changes MUST NOT expand all specs.
+          #    Root index affects whitelist, but should not force republish by itself.
 
           # Merge and deduplicate
           ALL=("${DIRECT_SPECS[@]}" "${VERSION_BUMP_SPECS[@]}")
@@ -177,13 +178,15 @@ jobs:
 
           mapfile -t UNIQUE < <(printf "%s\n" "${ALL[@]}" | sort -u)
           CHANGED_SPECS="$(printf "%s " "${UNIQUE[@]}")"
+
           echo "Changed specs (post-filter):"
           printf "  - %s\n" "${UNIQUE[@]}"
+
           echo "changed_specs=${CHANGED_SPECS}" >> $GITHUB_OUTPUT
           echo "any_changed=true" >> $GITHUB_OUTPUT
 
   validate:
-    # Lint OpenAPI specs with Redocly (if present) and enforce Conventional Commits (on PR).
+    # Lint OpenAPI specs with Redocly CLI and enforce Conventional Commits (PR only).
     name: Lint + Conventional Commits
     runs-on: ubuntu-latest
     needs: [ detect ]
@@ -221,7 +224,7 @@ jobs:
           done
 
   guard:
-    # Semantic diff guard with oasdiff; fails on breaking changes when version bump is insufficient.
+    # Semantic diff guard (oasdiff): validates semantic version bump vs API diff.
     name: Semantic diff guard (oasdiff)
     runs-on: ubuntu-latest
     needs: [ detect ]
@@ -270,7 +273,6 @@ jobs:
           else
             echo "Direct asset missing; using official installer..."
             curl -fsSL https://raw.githubusercontent.com/oasdiff/oasdiff/main/install.sh | sh -s -- -b . "${VERSION}"
-            # Installer may drop binary locally OR directly into /usr/local/bin depending on perms
             BIN="./oasdiff"
             if ! [ -x "$BIN" ]; then
               BIN="/usr/local/bin/oasdiff"
@@ -290,7 +292,7 @@ jobs:
           fi
           /usr/local/bin/oasdiff --version
 
-      - name: Run semantic guard
+      - name: Run semantic guard (per spec)
         env:
           CHANGED_SPECS: ${{ needs.detect.outputs.changed_specs }}
         run: |
@@ -324,17 +326,16 @@ jobs:
           retention-days: 7
 
   redoc:
-    # Optional Redoc HTML previews for reviewers; attached as artifacts.
+    # Optional Redoc HTML previews for changed specs (reviewer-friendly artifacts).
     name: Build Redoc previews
     runs-on: ubuntu-latest
     needs: [ detect ]
     if: needs.detect.outputs.any_changed == 'true' && inputs.run_redoc
     steps:
-      - name: Checkout (include scripts)
+      - name: Checkout consumer repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          repository: ${{ github.repository }}
 
       - name: Checkout ci-actions (to get scripts)
         uses: actions/checkout@v4
@@ -354,7 +355,7 @@ jobs:
       - name: Install Redocly CLI
         run: npm i -g @redocly/cli
 
-      - name: Build Redoc HTML previews
+      - name: Build Redoc HTML previews (per spec)
         run: |
           set -euo pipefail
           mkdir -p redoc-previews
@@ -375,36 +376,36 @@ jobs:
           path: redoc-previews/
           retention-days: 7
 
-  publish:
-    # Publish changed specs as Maven artifacts to GitHub Packages (or mavenLocal in local runs).
-    # Hardened against false positives: we pre-filter to avoid 409 conflicts
-    # by skipping artifacts that already exist in the registry (HEAD check).
-    name: Publish changed specs
+  publish_maven:
+    # Publishes changed specs as Maven artifacts (zip) via consumer repo Gradle build.
+    # We pre-filter (best-effort) to avoid GH Packages 409 conflicts (already published).
+    name: Publish contracts to GitHub Packages (maven)
     runs-on: ubuntu-latest
-    needs: [ detect, validate, guard ]  # ensure validations pass before publishing
+    needs: [ detect, validate, guard ]
     if: needs.detect.outputs.any_changed == 'true' && inputs.publish_enabled
     outputs:
-      released: ${{ steps.flag.outputs.released }}
+      published_any: ${{ steps.filter.outputs.published_any }}
+      release_channel: ${{ steps.channel.outputs.value }}
     steps:
-      - name: Checkout
+      - name: Checkout consumer repo (api-definitions)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install yq (required by Gradle build.kts and filtering)
+      - name: Install yq (required by Gradle build + filtering)
         run: |
           sudo curl -sSL -o /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
           yq --version
 
-      - name: Setup Java
+      - name: Setup Java (Gradle)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: ${{ inputs.java_version }}
           cache: gradle
 
-      - name: Derive release channel
+      - name: Derive release channel (branch-driven)
         id: channel
         shell: bash
         run: |
@@ -414,11 +415,12 @@ jobs:
             echo "value=SNAPSHOT" >> $GITHUB_OUTPUT
           fi
 
-      - name: Resolve publish list (skip already-published artifacts)
+      - name: Resolve publish list (best-effort skip of already-published Maven artifacts)
         id: filter
         env:
           CHANGED_SPECS: ${{ needs.detect.outputs.changed_specs }}
           REQUIRE_LISTED_ONLY: ${{ inputs.require_listed_only }}
+          RELEASE_CHANNEL: ${{ steps.channel.outputs.value }}
           GITHUB_TOKEN: ${{ secrets.PACKAGES_TOKEN || github.token }}
         shell: bash
         run: |
@@ -426,14 +428,15 @@ jobs:
           read -r -a SPECS <<< "${CHANGED_SPECS}"
           ROOT_META="metadata.yml"
 
-          # Build a whitelist when require_listed_only=true (by exact spec path)
+          # Build whitelist from root metadata.yml (by exact spec path)
+          # Root format (current):
+          #   apis:
+          #     - definition-path: apis/<...>/openapi.yaml
           declare -A WHITE=()
           if [[ "${REQUIRE_LISTED_ONLY}" == "true" && -f "${ROOT_META}" ]]; then
-            # Expected: root metadata lists allowed spec paths under a key like 'listedPaths'
-            # If your key name differs, adjust '.listedPaths[]' accordingly.
             while IFS= read -r p; do
               [[ -n "$p" ]] && WHITE["$p"]=1
-            done < <(yq '.listedPaths[]' "${ROOT_META}" 2>/dev/null || true)
+            done < <(yq -r '.apis[]."definition-path"' "${ROOT_META}" 2>/dev/null || true)
           fi
 
           must_publish() {
@@ -441,7 +444,7 @@ jobs:
             local dir; dir="$(dirname "$spec")"
             local meta="${dir}/metadata.yml"
 
-            # Respect require_listed_only
+            # Respect whitelist if enabled AND root index is present
             if [[ "${REQUIRE_LISTED_ONLY}" == "true" && ${#WHITE[@]} -gt 0 ]]; then
               if [[ -z "${WHITE[$spec]:-}" ]]; then
                 echo "skip: not listed -> ${spec}" >&2
@@ -449,14 +452,15 @@ jobs:
               fi
             fi
 
-            # Read per-API metadata (publish flag defaults to true)
+            # Per-API metadata schema fallback:
+            #  - Current schema: .api.publish / .api.groupId / .api.artifactId
+            #  - Legacy schema:  .publish / .groupId / .artifactId
             local publish="true"
-            local groupId="" artifactId="" version=""
+            local groupId="" artifactId=""
             if [[ -f "$meta" ]]; then
-              publish="$(yq '.publish // true' "$meta" 2>/dev/null || echo true)"
-              groupId="$(yq -r '.groupId // ""' "$meta" 2>/dev/null || echo "")"
-              artifactId="$(yq -r '.artifactId // ""' "$meta" 2>/dev/null || echo "")"
-              version="$(yq -r '.version // ""' "$meta" 2>/dev/null || echo "")"
+              publish="$(yq -r '.api.publish // .publish // true' "$meta" 2>/dev/null || echo true)"
+              groupId="$(yq -r '.api.groupId // .groupId // ""' "$meta" 2>/dev/null || echo "")"
+              artifactId="$(yq -r '.api.artifactId // .artifactId // ""' "$meta" 2>/dev/null || echo "")"
             fi
 
             if [[ "${publish}" != "true" ]]; then
@@ -464,13 +468,26 @@ jobs:
               return 1
             fi
 
-            # If any coord is missing, we cannot HEAD-check; defer to Gradle
-            if [[ -z "$groupId" || -z "$artifactId" || -z "$version" ]]; then
+            # Version source of truth is info.version (same as Gradle)
+            local baseVersion
+            baseVersion="$(yq -r '.info.version // empty' "$spec" 2>/dev/null || true)"
+            if [[ -z "$baseVersion" ]]; then
+              echo "no-check: missing info.version -> ${spec}" >&2
+              return 0
+            fi
+
+            local version="$baseVersion"
+            if [[ "${RELEASE_CHANNEL}" == "SNAPSHOT" && "$version" != *"-SNAPSHOT" ]]; then
+              version="${version}-SNAPSHOT"
+            fi
+
+            # If coords are missing, we cannot HEAD-check; defer to Gradle (it will compute defaults from path)
+            if [[ -z "$groupId" || -z "$artifactId" ]]; then
               echo "no-check: missing coords -> ${spec}" >&2
               return 0
             fi
 
-            # HEAD check against GH Packages. If 200 -> already exists (skip).
+            # HEAD check against GH Packages Maven registry: if 200 -> artifact exists -> skip
             local repo="https://maven.pkg.github.com/wendara-org/wendara-api-definitions"
             local groupPath="${groupId//./\/}"
             local url="${repo}/${groupPath}/${artifactId}/${version}/${artifactId}-${version}.zip"
@@ -484,7 +501,6 @@ jobs:
               return 1
             fi
 
-            # Otherwise, publish
             return 0
           }
 
@@ -499,15 +515,15 @@ jobs:
           if [[ ${#FILTERED[@]} -eq 0 ]]; then
             echo "filtered_specs=" >> $GITHUB_OUTPUT
             echo "published_any=false" >> $GITHUB_OUTPUT
-            echo "Nothing to publish after filtering (already in registry or not listed)."
+            echo "Nothing to publish after filtering."
           else
             FILTERED_SPECS="$(printf "%s " "${FILTERED[@]}")"
             echo "filtered_specs=${FILTERED_SPECS}" >> $GITHUB_OUTPUT
             echo "published_any=true" >> $GITHUB_OUTPUT
-            printf "Will publish:\n  - %s\n" "${FILTERED[@]}"
+            printf "Will publish (maven):\n  - %s\n" "${FILTERED[@]}"
           fi
 
-      - name: Publish (changed-only, filtered)
+      - name: Publish (Gradle publishChangedSpecs)
         if: steps.filter.outputs.filtered_specs != ''
         env:
           GITHUB_TOKEN: ${{ secrets.PACKAGES_TOKEN || github.token }}
@@ -519,23 +535,196 @@ jobs:
             -PreleaseChannel="${{ steps.channel.outputs.value }}" \
             -PrequireListedOnly="${{ inputs.require_listed_only }}"
 
-      - name: Flag release output
+  publish_npm:
+    # Publishes changed specs as npm packages via ci-actions script.
+    # The script is responsible for:
+    #  - Naming equivalence with Maven artifactId (per-API metadata.yml)
+    #  - Stable version on RELEASE
+    #  - Unique version on SNAPSHOT (no collisions)
+    #  - Skipping if version already exists (immutability)
+    name: Publish contracts to GitHub Packages (npm)
+    runs-on: ubuntu-latest
+    needs: [ detect, validate, guard ]
+    if: needs.detect.outputs.any_changed == 'true' && inputs.publish_enabled
+    outputs:
+      published_any: ${{ steps.published.outputs.published_any }}
+      release_channel: ${{ steps.channel.outputs.value }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout consumer repo (api-definitions)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout ci-actions (scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: wendara-org/wendara-ci-actions
+          path: .wendara-ci-actions
+          ref: main
+
+      - name: Make scripts executable
+        run: chmod -R +x .wendara-ci-actions/scripts
+
+      - name: Install yq (required by npm publish script)
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Setup Node (GitHub Packages npm registry)
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          registry-url: https://npm.pkg.github.com
+          scope: "@wendara-org"
+
+      - name: Derive release channel (branch-driven)
+        id: channel
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            echo "value=RELEASE" >> $GITHUB_OUTPUT
+          else
+            echo "value=SNAPSHOT" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Resolve publish list (npm)
+        id: filter
+        env:
+          CHANGED_SPECS: ${{ needs.detect.outputs.changed_specs }}
+          REQUIRE_LISTED_ONLY: ${{ inputs.require_listed_only }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          read -r -a SPECS <<< "${CHANGED_SPECS}"
+          ROOT_META="metadata.yml"
+
+          # Root whitelist (same semantics as Maven path filtering)
+          declare -A WHITE=()
+          if [[ "${REQUIRE_LISTED_ONLY}" == "true" && -f "${ROOT_META}" ]]; then
+            while IFS= read -r p; do
+              [[ -n "$p" ]] && WHITE["$p"]=1
+            done < <(yq -r '.apis[]."definition-path"' "${ROOT_META}" 2>/dev/null || true)
+          fi
+
+          must_publish() {
+            local spec="$1"
+            local dir; dir="$(dirname "$spec")"
+            local meta="${dir}/metadata.yml"
+
+            if [[ "${REQUIRE_LISTED_ONLY}" == "true" && ${#WHITE[@]} -gt 0 ]]; then
+              if [[ -z "${WHITE[$spec]:-}" ]]; then
+                echo "skip: not listed -> ${spec}" >&2
+                return 1
+              fi
+            fi
+
+            # Per-API publish flag with schema fallback
+            local publish="true"
+            if [[ -f "$meta" ]]; then
+              publish="$(yq -r '.api.publish // .publish // true' "$meta" 2>/dev/null || echo true)"
+            fi
+
+            if [[ "${publish}" != "true" ]]; then
+              echo "skip: publish=false -> ${spec}" >&2
+              return 1
+            fi
+
+            return 0
+          }
+
+          FILTERED=()
+          for spec in "${SPECS[@]}"; do
+            [[ -z "$spec" ]] && continue
+            if must_publish "$spec"; then
+              FILTERED+=("$spec")
+            fi
+          done
+
+          if [[ ${#FILTERED[@]} -eq 0 ]]; then
+            echo "filtered_specs=" >> $GITHUB_OUTPUT
+            echo "published_any=false" >> $GITHUB_OUTPUT
+            echo "Nothing to publish after filtering."
+          else
+            FILTERED_SPECS="$(printf "%s " "${FILTERED[@]}")"
+            echo "filtered_specs=${FILTERED_SPECS}" >> $GITHUB_OUTPUT
+            echo "published_any=true" >> $GITHUB_OUTPUT
+            printf "Will publish (npm):\n  - %s\n" "${FILTERED[@]}"
+          fi
+
+      - name: Publish (npm packages via script)
+        if: steps.filter.outputs.filtered_specs != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_TOKEN || github.token }}
+          RELEASE_CHANNEL: ${{ steps.channel.outputs.value }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          read -r -a SPECS <<< "$(echo '${{ steps.filter.outputs.filtered_specs }}' | xargs)"
+
+          for spec in "${SPECS[@]}"; do
+            [ -z "$spec" ] && continue
+            .wendara-ci-actions/scripts/api-first/npm-publish-contracts.sh "$spec" "${RELEASE_CHANNEL}"
+          done
+
+      - name: Surface publish outputs
+        id: published
+        shell: bash
+        run: |
+          # publish_any comes from filter (not from npm itself)
+          if [[ "${{ steps.filter.outputs.published_any }}" == "true" ]]; then
+            echo "published_any=true" >> $GITHUB_OUTPUT
+          else
+            echo "published_any=false" >> $GITHUB_OUTPUT
+          fi
+
+  release_gate:
+    # Single source of truth for reusable workflow outputs:
+    # - released: only true on main AND something was published (maven OR npm)
+    # - release_channel: derived from branch name
+    name: Release gate
+    runs-on: ubuntu-latest
+    needs: [ publish_maven, publish_npm ]
+    if: always()
+    outputs:
+      released: ${{ steps.flag.outputs.released }}
+      release_channel: ${{ steps.flag.outputs.release_channel }}
+    steps:
+      - name: Flag outputs
         id: flag
         shell: bash
         run: |
-          # We consider "released=true" only when publishing on main (stable channel)
-          # AND there was at least one spec to publish post-filtering.
-          if [[ "${{ steps.channel.outputs.value }}" == "RELEASE" && "${{ steps.filter.outputs.published_any }}" == "true" ]]; then
+          MAVEN_PUBLISHED="${{ needs.publish_maven.outputs.published_any }}"
+          NPM_PUBLISHED="${{ needs.publish_npm.outputs.published_any }}"
+
+          MAVEN_PUBLISHED="${MAVEN_PUBLISHED:-false}"
+          NPM_PUBLISHED="${NPM_PUBLISHED:-false}"
+
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            echo "release_channel=RELEASE" >> $GITHUB_OUTPUT
+          else
+            echo "release_channel=SNAPSHOT" >> $GITHUB_OUTPUT
+          fi
+
+          if [[ "${GITHUB_REF}" == "refs/heads/main" && ( "${MAVEN_PUBLISHED}" == "true" || "${NPM_PUBLISHED}" == "true" ) ]]; then
             echo "released=true" >> $GITHUB_OUTPUT
           else
             echo "released=false" >> $GITHUB_OUTPUT
           fi
 
   sync:
+    # Sync main → develop after a stable publish on main.
+    # Strategy:
+    # - Create a branch off develop.
+    # - Merge main using "ours" strategy to advance history without changing content.
+    # - If tree changed, create a PR; otherwise push directly to develop.
     name: Sync main → develop
     runs-on: ubuntu-latest
-    needs: [ publish ]
-    if: needs.publish.outputs.released == 'true'
+    needs: [ release_gate ]
+    if: needs.release_gate.outputs.released == 'true'
     permissions:
       contents: write
       pull-requests: write
@@ -557,32 +746,29 @@ jobs:
           git fetch origin main develop
           git checkout -b chore/sync-main-into-develop origin/develop
 
-          # Merge with 'ours' strategy to create history commit without changing content
+          # Create a history-only merge commit
           git merge -s ours --no-ff origin/main -m "chore(sync): record main tip in develop history"
 
-          # Check if tree changed compared to develop
+          # Determine whether there are actual content changes
           if git diff-tree --quiet origin/develop HEAD; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
           else
             echo "has_changes=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Push directly to develop (no content changes)
+      - name: Push directly to develop (history sync only)
         if: steps.merge.outputs.has_changes == 'false'
         run: |
-          # Direct push since it's only a history merge commit
           git push origin HEAD:develop
 
-      - name: Create PR (if there are actual changes)
+      - name: Create PR (when there are content changes)
         if: steps.merge.outputs.has_changes == 'true'
         env:
           GH_TOKEN: ${{ secrets.PACKAGES_TOKEN || github.token }}
         run: |
           git push -f origin chore/sync-main-into-develop
 
-          # Check if PR already exists
           existing_pr=$(gh pr list --head chore/sync-main-into-develop --base develop --json number --jq '.[0].number')
-
           if [ -n "$existing_pr" ]; then
             echo "✅ PR #$existing_pr already exists"
           else
@@ -606,7 +792,12 @@ jobs:
           fi
 
       - name: Summary
+        if: always()
         run: |
+          echo "✅ release_gate.released=${{ needs.release_gate.outputs.released }}"
+          echo "✅ release_gate.release_channel=${{ needs.release_gate.outputs.release_channel }}"
+          echo "✅ sync.has_changes=${{ steps.merge.outputs.has_changes }}"
+
           if [ "${{ steps.merge.outputs.has_changes }}" == "false" ]; then
             echo "✅ Pushed merge commit directly to develop (history sync only)"
           else

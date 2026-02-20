@@ -1,0 +1,292 @@
+# .github/workflows/reusable-manual-api-release.yml
+#
+# Manual, main-only backfill publisher for API contracts.
+# Purpose:
+# - Backfill historical releases to GitHub Packages (Maven + npm) for APIs that existed
+#   before we introduced npm publishing.
+#
+# Key rules:
+# - Main-only execution (guarded).
+# - Resolves target spec via root metadata.yml (api_id + transport + api_version).
+# - Does NOT fail if the artifact/package already exists (skip with logs).
+# - Uses the OpenAPI spec's info.version as the source of truth for RELEASE versions.
+#
+# Inputs:
+# - api_id: string (e.g., "auth")
+# - transport: string (e.g., "rest")
+# - api_version: string (e.g., "v1")
+# - channel: SNAPSHOT|RELEASE (default RELEASE)  -> for backfill, you almost always want RELEASE
+# - target: maven|npm|both (default both)
+#
+# Secrets:
+# - PACKAGES_TOKEN (optional): token with packages:write; falls back to github.token
+
+name: Reusable · Manual API Release (Backfill)
+
+on:
+  workflow_call:
+    inputs:
+      api_id:
+        description: "API id as in root metadata.yml (e.g., auth)"
+        required: true
+        type: string
+      transport:
+        description: "Transport as in root metadata.yml (e.g., rest)"
+        required: true
+        type: string
+      api_version:
+        description: "API version folder (e.g., v1)"
+        required: true
+        type: string
+      channel:
+        description: "Release channel (SNAPSHOT|RELEASE). Backfill should use RELEASE."
+        required: false
+        default: "RELEASE"
+        type: string
+      target:
+        description: "Publishing target (maven|npm|both)"
+        required: false
+        default: "both"
+        type: string
+    secrets:
+      PACKAGES_TOKEN:
+        required: false
+
+  workflow_dispatch:
+    inputs:
+      api_id:
+        description: "API id as in root metadata.yml (e.g., auth)"
+        required: true
+        type: string
+      transport:
+        description: "Transport as in root metadata.yml (e.g., rest)"
+        required: true
+        type: string
+      api_version:
+        description: "API version folder (e.g., v1)"
+        required: true
+        type: string
+      channel:
+        description: "Release channel (SNAPSHOT|RELEASE). Backfill should use RELEASE."
+        required: false
+        default: "RELEASE"
+        type: choice
+        options: [ "RELEASE", "SNAPSHOT" ]
+      target:
+        description: "Publishing target"
+        required: false
+        default: "both"
+        type: choice
+        options: [ "both", "maven", "npm" ]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  manual_release:
+    name: Manual release (main-only, id-based)
+    runs-on: ubuntu-latest
+    env:
+      ROOT_META: "metadata.yml"
+      API_ID: "${{ inputs.api_id }}"
+      TRANSPORT: "${{ inputs.transport }}"
+      API_VERSION: "${{ inputs.api_version }}"
+      CHANNEL: "${{ inputs.channel }}"
+      TARGET: "${{ inputs.target }}"
+      GH_TOKEN_PACKAGES: "${{ secrets.PACKAGES_TOKEN || github.token }}"
+      # Registry endpoints for GitHub Packages (do not confuse "GitHub Packages" with "Maven the product")
+      MAVEN_REPO_URL: "https://maven.pkg.github.com/wendara-org/wendara-api-definitions"
+      NPM_REGISTRY: "https://npm.pkg.github.com"
+      NPM_SCOPE: "@wendara-org"
+
+    steps:
+      - name: Guard main only
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "❌ This workflow can only run on main. Current ref: ${GITHUB_REF}"
+            exit 1
+          fi
+          echo "✅ main-only guard passed"
+
+      - name: Checkout consumer repo (api-definitions)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout ci-actions (scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: wendara-org/wendara-ci-actions
+          path: .wendara-ci-actions
+          ref: main
+
+      - name: Make scripts executable
+        run: chmod -R +x .wendara-ci-actions/scripts
+
+      - name: Install yq (metadata parsing)
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Resolve spec path from root metadata.yml
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f "${ROOT_META}" ]]; then
+            echo "❌ Root metadata not found: ${ROOT_META}"
+            exit 2
+          fi
+
+          # Find definition-path by (id + transport + version)
+          SPEC_PATH="$(yq -r \
+            --arg id "${API_ID}" \
+            --arg t "${TRANSPORT}" \
+            --arg v "${API_VERSION}" \
+            '.apis[] | select(.id == $id and .transport == $t and .version == $v) | ."definition-path"' \
+            "${ROOT_META}" | head -n 1)"
+
+          if [[ -z "${SPEC_PATH}" || "${SPEC_PATH}" == "null" ]]; then
+            echo "❌ Cannot resolve definition-path for id='${API_ID}', transport='${TRANSPORT}', version='${API_VERSION}'"
+            exit 2
+          fi
+
+          if [[ ! -f "${SPEC_PATH}" ]]; then
+            echo "❌ Resolved spec path does not exist: ${SPEC_PATH}"
+            exit 2
+          fi
+
+          echo "✅ Resolved spec: ${SPEC_PATH}"
+          echo "spec_path=${SPEC_PATH}" >> "${GITHUB_OUTPUT}"
+
+      - name: Resolve OpenAPI info.version (source of truth)
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          SPEC="${{ steps.resolve.outputs.spec_path }}"
+          BASE_VERSION="$(yq -r '.info.version // empty' "${SPEC}" 2>/dev/null || true)"
+          if [[ -z "${BASE_VERSION}" ]]; then
+            echo "❌ Cannot resolve .info.version from ${SPEC}"
+            exit 2
+          fi
+
+          FINAL_VERSION="${BASE_VERSION}"
+          if [[ "${CHANNEL}" == "SNAPSHOT" && "${FINAL_VERSION}" != *"-SNAPSHOT" ]]; then
+            FINAL_VERSION="${FINAL_VERSION}-SNAPSHOT"
+          fi
+
+          echo "✅ info.version=${BASE_VERSION}"
+          echo "✅ finalVersion=${FINAL_VERSION} (channel=${CHANNEL})"
+          echo "base_version=${BASE_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "final_version=${FINAL_VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish Maven (GitHub Packages) - skip if exists
+        if: env.TARGET == 'maven' || env.TARGET == 'both'
+        env:
+          SPEC: "${{ steps.resolve.outputs.spec_path }}"
+          FINAL_VERSION: "${{ steps.version.outputs.final_version }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Read coords from per-API metadata with fallback:
+          # - New schema: .api.groupId / .api.artifactId
+          # - Legacy schema: .groupId / .artifactId
+          SPEC_DIR="$(dirname "${SPEC}")"
+          META="${SPEC_DIR}/metadata.yml"
+
+          groupId=""
+          artifactId=""
+
+          if [[ -f "${META}" ]]; then
+            groupId="$(yq -r '.api.groupId // .groupId // ""' "${META}" 2>/dev/null || echo "")"
+            artifactId="$(yq -r '.api.artifactId // .artifactId // ""' "${META}" 2>/dev/null || echo "")"
+          fi
+
+          if [[ -z "${groupId}" || -z "${artifactId}" ]]; then
+            echo "⚠️ Missing groupId/artifactId in per-API metadata.yml; Maven publish will rely on Gradle path-driven coords."
+            echo "⚠️ Skipping pre-check to avoid false negatives."
+          else
+            groupPath="${groupId//./\/}"
+            url="${MAVEN_REPO_URL}/${groupPath}/${artifactId}/${FINAL_VERSION}/${artifactId}-${FINAL_VERSION}.zip"
+            code="$(curl -s -o /dev/null -w "%{http_code}" -I -H "Authorization: Bearer ${GH_TOKEN_PACKAGES}" "${url}" || true)"
+
+            if [[ "${code}" == "200" ]]; then
+              echo "✅ Maven artifact already exists, skipping: ${groupId}:${artifactId}:${FINAL_VERSION}"
+              exit 0
+            fi
+          fi
+
+          echo "📦 Publishing Maven contract via Gradle for spec: ${SPEC}"
+          ./gradlew --no-daemon --no-configuration-cache \
+            publishChangedSpecs \
+            -PchangedSpecs="${SPEC}" \
+            -PreleaseChannel="${CHANNEL}" \
+            -PrequireListedOnly="true"
+
+      - name: Setup Node (npm registry)
+        if: env.TARGET == 'npm' || env.TARGET == 'both'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@wendara-org"
+
+      - name: Publish npm (GitHub Packages) - skip if exists
+        if: env.TARGET == 'npm' || env.TARGET == 'both'
+        env:
+          NODE_AUTH_TOKEN: "${{ secrets.PACKAGES_TOKEN || github.token }}"
+          SPEC: "${{ steps.resolve.outputs.spec_path }}"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Compute npm coords in the same way the script will do it, then skip if it exists.
+          # Package naming is aligned with your current Maven artifactId style (api + transport + version).
+          #
+          # NOTE: If your script already implements the skip internally, this is redundant but harmless.
+          baseVersion="$(yq -r '.info.version // empty' "${SPEC}" 2>/dev/null || true)"
+          if [[ -z "${baseVersion}" ]]; then
+            echo "❌ Cannot resolve .info.version from ${SPEC}"
+            exit 2
+          fi
+
+          # Mirror script rules: RELEASE uses baseVersion; SNAPSHOT is unique.
+          if [[ "${CHANNEL}" == "RELEASE" ]]; then
+            npmVer="${baseVersion}"
+          else
+            runNo="${GITHUB_RUN_NUMBER:-0}"
+            npmVer="${baseVersion}-snapshot.${runNo}"
+          fi
+
+          # Build package name from path: apis/<apiName>/<transport>/<apiVersion>/openapi.yaml
+          IFS='/' read -r _ apiName transport apiVersion _ <<< "${SPEC}"
+          pkg="${NPM_SCOPE}/${apiName}-${transport}-${apiVersion}-contracts"
+
+          if npm view "${pkg}@${npmVer}" >/dev/null 2>&1; then
+            echo "✅ npm package already exists, skipping: ${pkg}@${npmVer}"
+            exit 0
+          fi
+
+          echo "📦 Publishing npm contract via script: ${pkg}@${npmVer}"
+          .wendara-ci-actions/scripts/api-first/npm-publish-contracts.sh "${SPEC}" "${CHANNEL}" "${NPM_SCOPE}" "${NPM_REGISTRY}"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          echo "==================== MANUAL RELEASE SUMMARY ===================="
+          echo "api_id=${API_ID}"
+          echo "transport=${TRANSPORT}"
+          echo "api_version=${API_VERSION}"
+          echo "channel=${CHANNEL}"
+          echo "target=${TARGET}"
+          echo "spec_path=${{ steps.resolve.outputs.spec_path }}"
+          echo "openapi.info.version=${{ steps.version.outputs.base_version }}"
+          echo "final_version=${{ steps.version.outputs.final_version }}"
+          echo "==============================================================="

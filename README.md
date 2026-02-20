@@ -21,6 +21,7 @@ Reusable GitHub Actions **workflows** and **helper scripts** for Wendara’s eng
   - [Java Backend (`reusable-java-backend.yml`)](#java-backend-reusable-java-backendyml)
   - [Node Apps (`reusable-node-app.yml`)](#node-apps-reusable-node-appyml)
   - [Node Mobile Apps (`reusable-node-mobile.yml`)](#node-mobile-apps-reusable-node-mobileyml)
+  - [Manual API Release (`reusable-manual-api-release.yml`)](#manual-api-release-reusable-manual-api-releaseyml)
 - [Helper Scripts](#helper-scripts)
 - [Reviewdog & PR annotations](#reviewdog--pr-annotations)
 - [API First - How Versioning, Publishing & Changelog Work](#how-versioning-publishing--changelog-work-in-api-first)
@@ -114,7 +115,9 @@ sync PR.
 - on `develop`: **SNAPSHOT** artifacts
 - on `main`: **stable** artifacts
 
-7. After stable publish on `main`, opens a **PR main → develop** to keep branches in sync.
+7. **Now also generates and publishes corresponding npm package versions for each changed API contract** (in addition to
+   other artifact types), ensuring npm consumers can access the latest contract versions automatically.
+8. After stable publish on `main`, opens a **PR main → develop** to keep branches in sync.
 
 **Inputs**
 
@@ -496,6 +499,112 @@ builds (e.g., QA, release candidates).
 
 ---
 
+### Manual API Release (`reusable-manual-api-release.yml`)
+
+Reusable workflow for manually publishing (backfilling) API contract artifacts to GitHub Packages (Maven and npm).
+Intended for cases where historical or missing releases need to be published without triggering the full automated
+pipeline.
+
+**What it does**
+
+1. Allows manual or workflow_call-driven publishing of a specific API contract version to Maven, npm, or both.
+2. Resolves the target OpenAPI spec via the root `metadata.yml` using the provided API id, transport, and version.
+3. Reads the canonical version from the spec's `info.version` (source of truth).
+4. Publishes the contract as a Maven artifact (zip) and/or npm package to GitHub Packages, using the same conventions as
+   the automated workflow.
+5. Skips publishing if the artifact or package already exists (idempotent, logs skip).
+6. Only runs on `main` branch (guarded at runtime).
+
+**Inputs**
+
+| Name          | Type   | Required | Default | Description                                         |
+|---------------|--------|----------|---------|-----------------------------------------------------|
+| `api_id`      | string | yes      |         | API id as in root `metadata.yml` (e.g., `auth`).    |
+| `transport`   | string | yes      |         | Transport as in root `metadata.yml` (e.g., `rest`). |
+| `api_version` | string | yes      |         | API version folder (e.g., `v1`).                    |
+| `channel`     | string | no       | RELEASE | Release channel: `SNAPSHOT` or `RELEASE`.           |
+| `target`      | string | no       | both    | Publishing target: `maven`, `npm`, or `both`.       |
+
+**Secrets**
+
+| Secret           | Purpose                                                               |
+|------------------|-----------------------------------------------------------------------|
+| `PACKAGES_TOKEN` | Token with `packages:write` (optional, falls back to `github.token`). |
+
+**Jobs**
+
+| Job              | Description                                                                   |
+|------------------|-------------------------------------------------------------------------------|
+| `manual_release` | Publishes the specified API contract to Maven and/or npm, skipping if exists. |
+
+**Example usage** (`wendara-api-definitions/.github/workflows/manual-api-release.yml`):
+
+```yaml
+name: Manual API Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_id:
+        description: "API id as in root metadata.yml (e.g., auth)"
+        required: true
+        type: string
+      transport:
+        description: "Transport as in root metadata.yml (e.g., rest)"
+        required: true
+        type: string
+      api_version:
+        description: "API version folder (e.g., v1)"
+        required: true
+        type: string
+      channel:
+        description: "Release channel (SNAPSHOT|RELEASE). Backfill should use RELEASE."
+        required: false
+        default: "RELEASE"
+        type: choice
+        options: [ "RELEASE", "SNAPSHOT" ]
+      target:
+        description: "Publishing target"
+        required: false
+        default: "both"
+        type: choice
+        options: [ "both", "maven", "npm" ]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  manual_release:
+    uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-manual-api-release.yml@main
+    with:
+      api_id: "auth"
+      transport: "rest"
+      api_version: "v1"
+      channel: "RELEASE"
+      target: "both"
+    secrets:
+      PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+**Environment Variables**
+
+The workflow defines the following environment variables for registry endpoints and package naming:
+
+| Variable         | Example Value                                                      | Purpose                                                |
+|------------------|--------------------------------------------------------------------|--------------------------------------------------------|
+| `MAVEN_REPO_URL` | `https://maven.pkg.github.com/wendara-org/wendara-api-definitions` | GitHub Packages Maven registry for contract artifacts. |
+| `NPM_REGISTRY`   | `https://npm.pkg.github.com`                                       | GitHub Packages npm registry for contract packages.    |
+| `NPM_SCOPE`      | `@wendara-org`                                                     | npm scope for contract packages.                       |
+
+These are used by the publishing steps and scripts to ensure all artifacts are routed to the correct registry and scope,
+and to avoid hardcoding URLs in multiple places.
+
+> **Note:** This workflow is intended for manual or backfill use only. For automated contract publishing on push/PR, use
+`reusable-api-contracts.yml`.
+
+---
+
 ## Helper Scripts
 
 All helper scripts are located under `scripts/` and grouped by domain:
@@ -557,6 +666,9 @@ env:
   eligible.
 - **Changelog**: automatically generated via `oasdiff changelog` + Conventional Commits, attached as CI artifact or
   released note.
+- **npm versioning**: for each changed API contract, a corresponding npm package version is generated and published to
+  the npm registry, matching the contract versioning strategy above. This allows npm consumers to always retrieve the
+  latest contract definitions via npm.
 
 ## How Versioning, Publishing & Changelog Work in Java Backend
 
