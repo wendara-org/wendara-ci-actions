@@ -150,16 +150,22 @@ jobs:
             fi
           done
 
-          # 2) Per-API metadata.yml: include ONLY if "version" changed (legacy metadata schema support)
+          # 2) Per-API metadata.yml changes:
+          #    Include the spec ONLY if openapi.info.version changed between BASE and HEAD.
+          #    This keeps version source-of-truth aligned with OpenAPI (not metadata), while still supporting
+          #    "bump-by-metadata-change" scenarios where maintainers update version without editing openapi.yaml.
           VERSION_BUMP_SPECS=()
           for meta in ${{ steps.changed.outputs.all_changed_files }}; do
             if [[ "$meta" == apis/*/*/*/metadata.yml ]]; then
-              old_ver="$(git show "${BASE_REF}:${meta}" 2>/dev/null | yq -r '.version // empty' || true)"
-              new_ver="$(yq -r '.version // empty' "$meta" || true)"
-              if [[ -n "$old_ver" && -n "$new_ver" && "$old_ver" != "$new_ver" ]]; then
-                api_dir="$(dirname "$meta")"
-                if [[ -f "$api_dir/openapi.yaml" ]]; then
-                  VERSION_BUMP_SPECS+=("$api_dir/openapi.yaml")
+              api_dir="$(dirname "$meta")"
+              spec="${api_dir}/openapi.yaml"
+
+              if [[ -f "$spec" ]]; then
+                old_ver="$(git show "${BASE_REF}:${spec}" 2>/dev/null | yq e -r '.info.version // ""' - 2>/dev/null || true)"
+                new_ver="$(yq e -r '.info.version // ""' "$spec" 2>/dev/null || true)"
+
+                if [[ -n "$old_ver" && -n "$new_ver" && "$old_ver" != "$new_ver" ]]; then
+                  VERSION_BUMP_SPECS+=("$spec")
                 fi
               fi
             fi
@@ -436,7 +442,7 @@ jobs:
           if [[ "${REQUIRE_LISTED_ONLY}" == "true" && -f "${ROOT_META}" ]]; then
             while IFS= read -r p; do
               [[ -n "$p" ]] && WHITE["$p"]=1
-            done < <(yq -r '.apis[]."definition-path"' "${ROOT_META}" 2>/dev/null || true)
+            done < <(yq e -r '.apis[]."definition-path"' "${ROOT_META}" 2>/dev/null || true)
           fi
 
           must_publish() {
@@ -458,9 +464,9 @@ jobs:
             local publish="true"
             local groupId="" artifactId=""
             if [[ -f "$meta" ]]; then
-              publish="$(yq -r '.api.publish // .publish // true' "$meta" 2>/dev/null || echo true)"
-              groupId="$(yq -r '.api.groupId // .groupId // ""' "$meta" 2>/dev/null || echo "")"
-              artifactId="$(yq -r '.api.artifactId // .artifactId // ""' "$meta" 2>/dev/null || echo "")"
+              publish="$(yq e -r '.api.publish // .publish // true' "$meta" 2>/dev/null || echo true)"
+              groupId="$(yq e -r '.api.groupId // .groupId // ""' "$meta" 2>/dev/null || echo "")"
+              artifactId="$(yq e -r '.api.artifactId // .artifactId // ""' "$meta" 2>/dev/null || echo "")"
             fi
 
             if [[ "${publish}" != "true" ]]; then
@@ -470,7 +476,7 @@ jobs:
 
             # Version source of truth is info.version (same as Gradle)
             local baseVersion
-            baseVersion="$(yq -r '.info.version // empty' "$spec" 2>/dev/null || true)"
+            baseVersion="$(yq e -r '.info.version // ""' "$spec" 2>/dev/null || true)"
             if [[ -z "$baseVersion" ]]; then
               echo "no-check: missing info.version -> ${spec}" >&2
               return 0
@@ -607,7 +613,7 @@ jobs:
           if [[ "${REQUIRE_LISTED_ONLY}" == "true" && -f "${ROOT_META}" ]]; then
             while IFS= read -r p; do
               [[ -n "$p" ]] && WHITE["$p"]=1
-            done < <(yq -r '.apis[]."definition-path"' "${ROOT_META}" 2>/dev/null || true)
+            done < <(yq e -r '.apis[]."definition-path"' "${ROOT_META}" 2>/dev/null || true)
           fi
 
           must_publish() {
@@ -625,7 +631,7 @@ jobs:
             # Per-API publish flag with schema fallback
             local publish="true"
             if [[ -f "$meta" ]]; then
-              publish="$(yq -r '.api.publish // .publish // true' "$meta" 2>/dev/null || echo true)"
+              publish="$(yq e -r '.api.publish // .publish // true' "$meta" 2>/dev/null || echo true)"
             fi
 
             if [[ "${publish}" != "true" ]]; then

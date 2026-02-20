@@ -1,4 +1,25 @@
 #!/usr/bin/env bash
+# File: scripts/api-first/npm-publish-contracts.sh
+# Purpose:
+# - Publish OpenAPI contracts as an npm package to GitHub Packages.
+# - Naming is transport-aware and metadata-aware to avoid collisions (rest vs grpc vs kafka).
+#
+# Args:
+#   npm-publish-contracts.sh <specPath> <SNAPSHOT|RELEASE> [@scope] [registry]
+#
+# Naming rules:
+# - Version source of truth: OpenAPI info.version
+# - Package name:
+#   - If per-API metadata.yml defines .npm.packageName -> use it (verbatim, without scope)
+#   - Else -> "${transport}-${artifactId}"
+# - artifactId:
+#   - Prefer .api.artifactId (fallback legacy .artifactId)
+#   - Else fallback "${apiName}-${apiVersion}"
+#
+# Version rules:
+# - RELEASE: exact base version (e.g. 1.1.0)
+# - SNAPSHOT: unique pre-release (e.g. 1.1.0-snapshot.<run_number>)
+
 set -euo pipefail
 
 SPEC_PATH="${1:-}"
@@ -31,17 +52,33 @@ if [[ -z "${API_NAME:-}" || -z "${TRANSPORT:-}" || -z "${API_VERSION:-}" ]]; the
   exit 2
 fi
 
-# yq v4: do NOT use 'empty' (jq keyword). Use an empty string fallback instead.
 BASE_VERSION="$(yq e -r '.info.version // ""' "$SPEC_PATH" 2>/dev/null || true)"
+if [[ -z "$BASE_VERSION" ]]; then
+  # Fallback extraction from info block (defensive)
+  BASE_VERSION="$(awk '
+    BEGIN { ininfo=0 }
+    /^info:[[:space:]]*$/ { ininfo=1; next }
+    ininfo && /^[^[:space:]]/ { ininfo=0 }
+    ininfo && /^[[:space:]]+version:[[:space:]]*/ {
+      sub(/^[[:space:]]+version:[[:space:]]*/, "", $0)
+      gsub(/\r$/, "", $0)
+      gsub(/^["'\''"]|["'\''"]$/, "", $0)
+      print $0
+      exit
+    }
+  ' "$SPEC_PATH")"
+fi
+
 if [[ -z "$BASE_VERSION" ]]; then
   echo "❌ Cannot resolve .info.version from $SPEC_PATH"
   exit 2
 fi
 
-# ---- Metadata (fallback: new format .api.* first, then legacy flat keys) ----
+# ---- Metadata (with fallback: new format .api.* first, then legacy flat keys) ----
 PUBLISH="true"
 ARTIFACT_ID=""
 GROUP_ID=""
+NPM_PKG_OVERRIDE=""
 
 if [[ -f "$META_PATH" ]]; then
   # publish flag
@@ -50,6 +87,9 @@ if [[ -f "$META_PATH" ]]; then
   # artifactId / groupId
   ARTIFACT_ID="$(yq e -r '.api.artifactId // .artifactId // ""' "$META_PATH" 2>/dev/null || echo "")"
   GROUP_ID="$(yq e -r '.api.groupId // .groupId // ""' "$META_PATH" 2>/dev/null || echo "")"
+
+  # optional npm override
+  NPM_PKG_OVERRIDE="$(yq e -r '.npm.packageName // ""' "$META_PATH" 2>/dev/null || echo "")"
 fi
 
 if [[ "${PUBLISH}" != "true" ]]; then
@@ -57,15 +97,11 @@ if [[ "${PUBLISH}" != "true" ]]; then
   exit 0
 fi
 
-# Default artifactId if not provided (align with Maven artifactId convention in your org)
-# Example: auth-api-v1
+# Default artifactId if not provided (match Gradle path-driven default as close as possible)
+# build.gradle defaults: "$apiName-$apiVersion"
 if [[ -z "${ARTIFACT_ID}" ]]; then
   ARTIFACT_ID="${API_NAME}-${API_VERSION}"
 fi
-
-# NPM package name = scope + artifactId (equivalent to Maven artifactId)
-# NPM requires lowercase
-PKG_NAME="${NPM_SCOPE}/$(echo "${ARTIFACT_ID}" | tr '[:upper:]' '[:lower:]')"
 
 # NPM versions must be immutable.
 # RELEASE: exact OpenAPI version (1.1.0)
@@ -78,6 +114,16 @@ else
   NPM_VERSION="${BASE_VERSION}-snapshot.${RUN}"
   DIST_TAG="snapshot"
 fi
+
+# Package name (transport-aware + optional override)
+if [[ -n "${NPM_PKG_OVERRIDE}" ]]; then
+  PKG_BASE="${NPM_PKG_OVERRIDE}"
+else
+  PKG_BASE="${TRANSPORT}-${ARTIFACT_ID}"
+fi
+
+# NPM requires lowercase
+PKG_NAME="${NPM_SCOPE}/$(echo "${PKG_BASE}" | tr '[:upper:]' '[:lower:]')"
 
 # Stage
 STAGE_ROOT="build/npm-stage"

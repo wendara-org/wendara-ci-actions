@@ -1,4 +1,25 @@
 # .github/workflows/reusable-manual-api-release.yml
+#
+# Manual, main-only backfill publisher for API contracts.
+# Purpose:
+# - Backfill historical releases to GitHub Packages (Maven + npm) for APIs that existed
+#   before we introduced npm publishing.
+#
+# Key rules:
+# - Main-only execution (guarded).
+# - Resolves target spec via root metadata.yml (api_id + transport + api_version).
+# - Does NOT fail if the artifact/package already exists (skip with logs).
+# - Uses the OpenAPI spec's info.version as the source of truth for RELEASE versions.
+#
+# Inputs:
+# - api_id: string (e.g., "auth")
+# - transport: string (e.g., "rest")
+# - api_version: string (e.g., "v1")
+# - channel: SNAPSHOT|RELEASE (default RELEASE)  -> for backfill, you almost always want RELEASE
+# - target: maven|npm|both (default both)
+#
+# Secrets:
+# - PACKAGES_TOKEN (optional): token with packages:write; falls back to github.token
 
 name: Reusable · Manual API Release (Backfill)
 
@@ -74,6 +95,8 @@ jobs:
       CHANNEL: "${{ inputs.channel }}"
       TARGET: "${{ inputs.target }}"
       GH_TOKEN_PACKAGES: "${{ secrets.PACKAGES_TOKEN || github.token }}"
+
+      # Registry endpoints for GitHub Packages
       MAVEN_REPO_URL: "https://maven.pkg.github.com/wendara-org/wendara-api-definitions"
       NPM_REGISTRY: "https://npm.pkg.github.com"
       NPM_SCOPE: "@wendara-org"
@@ -120,6 +143,7 @@ jobs:
             exit 2
           fi
 
+          # NOTE: yq is NOT jq; it doesn't support --arg. Use strenv() to read env vars.
           SPEC_PATH="$(yq e -r \
             '.apis[]
               | select(.id == strenv(API_ID) and .transport == strenv(TRANSPORT) and .version == strenv(API_VERSION))
@@ -146,6 +170,7 @@ jobs:
           set -euo pipefail
           SPEC="${{ steps.resolve.outputs.spec_path }}"
 
+          # 1) Primary: yq parsing (keep stderr so we can debug)
           BASE_VERSION=""
           if BASE_VERSION="$(yq e -r '.info.version // ""' "${SPEC}")"; then
             true
@@ -153,6 +178,7 @@ jobs:
             echo "⚠️ yq failed to parse '${SPEC}'. Falling back to text extraction." >&2
           fi
 
+          # 2) Fallback: extract version from the 'info:' block (only if yq returned empty)
           if [[ -z "${BASE_VERSION}" ]]; then
             BASE_VERSION="$(awk '
               BEGIN { ininfo=0 }
@@ -161,6 +187,7 @@ jobs:
               ininfo && /^[[:space:]]+version:[[:space:]]*/ {
                 sub(/^[[:space:]]+version:[[:space:]]*/, "", $0)
                 gsub(/\r$/, "", $0)
+                gsub(/^["'\''"]|["'\''"]$/, "", $0)
                 print $0
                 exit
               }
@@ -191,6 +218,9 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Read coords from per-API metadata with fallback:
+          # - New schema: .api.groupId / .api.artifactId
+          # - Legacy schema: .groupId / .artifactId
           SPEC_DIR="$(dirname "${SPEC}")"
           META="${SPEC_DIR}/metadata.yml"
 
@@ -236,10 +266,54 @@ jobs:
         env:
           NODE_AUTH_TOKEN: "${{ secrets.PACKAGES_TOKEN || github.token }}"
           SPEC: "${{ steps.resolve.outputs.spec_path }}"
+          BASE_VERSION: "${{ steps.version.outputs.base_version }}"
         shell: bash
         run: |
           set -euo pipefail
-          echo "📦 Publishing npm contract via script (script is source of truth for naming + skip): ${SPEC}"
+
+          if [[ -z "${BASE_VERSION}" ]]; then
+            echo "❌ Missing BASE_VERSION from previous step outputs"
+            exit 2
+          fi
+
+          # Mirror script rules: RELEASE uses baseVersion; SNAPSHOT is unique.
+          if [[ "${CHANNEL}" == "RELEASE" ]]; then
+            npmVer="${BASE_VERSION}"
+          else
+            runNo="${GITHUB_RUN_NUMBER:-0}"
+            npmVer="${BASE_VERSION}-snapshot.${runNo}"
+          fi
+
+          # Derive apiName/transport/apiVersion from path: apis/<apiName>/<transport>/<apiVersion>/openapi.yaml
+          IFS='/' read -r _ apiName transport apiVersion _ <<< "${SPEC}"
+
+          SPEC_DIR="$(dirname "${SPEC}")"
+          META="${SPEC_DIR}/metadata.yml"
+
+          artifactId=""
+          npmOverride=""
+          if [[ -f "${META}" ]]; then
+            artifactId="$(yq e -r '.api.artifactId // .artifactId // ""' "${META}" 2>/dev/null || echo "")"
+            npmOverride="$(yq e -r '.npm.packageName // ""' "${META}" 2>/dev/null || echo "")"
+          fi
+
+          if [[ -n "${npmOverride}" ]]; then
+            pkgBase="${npmOverride}"
+          else
+            if [[ -z "${artifactId}" ]]; then
+              artifactId="${apiName}-${apiVersion}"
+            fi
+            pkgBase="${transport}-${artifactId}"
+          fi
+
+          pkg="${NPM_SCOPE}/$(echo "${pkgBase}" | tr '[:upper:]' '[:lower:]')"
+
+          if npm view "${pkg}@${npmVer}" >/dev/null 2>&1; then
+            echo "✅ npm package already exists, skipping: ${pkg}@${npmVer}"
+            exit 0
+          fi
+
+          echo "📦 Publishing npm contract via script: ${pkg}@${npmVer}"
           .wendara-ci-actions/scripts/api-first/npm-publish-contracts.sh "${SPEC}" "${CHANNEL}" "${NPM_SCOPE}" "${NPM_REGISTRY}"
 
       - name: Summary
