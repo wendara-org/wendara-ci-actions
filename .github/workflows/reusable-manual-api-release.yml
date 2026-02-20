@@ -171,14 +171,36 @@ jobs:
           SPEC="${{ steps.resolve.outputs.spec_path }}"
 
           echo "🔎 SPEC=${SPEC}"
-          ls -la "${SPEC}" || true
-          echo "----- HEAD(40) ${SPEC} -----"
-          sed -n '1,40p' "${SPEC}" || true
+          ls -la "${SPEC}"
+          echo "----- HEAD(60) ${SPEC} -----"
+          sed -n '1,60p' "${SPEC}"
           echo "----------------------------"
 
-          BASE_VERSION="$(yq e -r '.info.version // empty' "${SPEC}" 2>/dev/null || true)"
+          # 1) Primary: yq parsing (do NOT silence errors; we want the real failure reason)
+          BASE_VERSION=""
+          if BASE_VERSION="$(yq e -r '.info.version // ""' "${SPEC}")"; then
+            true
+          else
+            echo "⚠️ yq failed to parse '${SPEC}'. Falling back to text extraction." >&2
+          fi
+
+          # 2) Fallback: extract version from the 'info:' block (only if yq returned empty)
           if [[ -z "${BASE_VERSION}" ]]; then
-            echo "❌ Cannot resolve .info.version from ${SPEC}"
+            BASE_VERSION="$(awk '
+              BEGIN { ininfo=0 }
+              /^info:[[:space:]]*$/ { ininfo=1; next }
+              ininfo && /^[^[:space:]]/ { ininfo=0 }
+              ininfo && /^[[:space:]]+version:[[:space:]]*/ {
+                sub(/^[[:space:]]+version:[[:space:]]*/, "", $0)
+                gsub(/\r$/, "", $0)
+                print $0
+                exit
+              }
+            ' "${SPEC}")"
+          fi
+
+          if [[ -z "${BASE_VERSION}" ]]; then
+            echo "❌ Cannot resolve .info.version from ${SPEC} (yq+fallback both failed)"
             exit 2
           fi
 
