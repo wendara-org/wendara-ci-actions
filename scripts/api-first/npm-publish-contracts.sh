@@ -31,24 +31,25 @@ if [[ -z "${API_NAME:-}" || -z "${TRANSPORT:-}" || -z "${API_VERSION:-}" ]]; the
   exit 2
 fi
 
-BASE_VERSION="$(yq -r '.info.version // empty' "$SPEC_PATH")"
+# yq v4: do NOT use 'empty' (jq keyword). Use an empty string fallback instead.
+BASE_VERSION="$(yq e -r '.info.version // ""' "$SPEC_PATH" 2>/dev/null || true)"
 if [[ -z "$BASE_VERSION" ]]; then
   echo "❌ Cannot resolve .info.version from $SPEC_PATH"
   exit 2
 fi
 
-# ---- Metadata (with fallback: new format .api.* first, then legacy flat keys) ----
+# ---- Metadata (fallback: new format .api.* first, then legacy flat keys) ----
 PUBLISH="true"
 ARTIFACT_ID=""
 GROUP_ID=""
 
 if [[ -f "$META_PATH" ]]; then
   # publish flag
-  PUBLISH="$(yq -r '.api.publish // .publish // true' "$META_PATH" 2>/dev/null || echo true)"
+  PUBLISH="$(yq e -r '.api.publish // .publish // true' "$META_PATH" 2>/dev/null || echo true)"
 
   # artifactId / groupId
-  ARTIFACT_ID="$(yq -r '.api.artifactId // .artifactId // empty' "$META_PATH" 2>/dev/null || echo "")"
-  GROUP_ID="$(yq -r '.api.groupId // .groupId // empty' "$META_PATH" 2>/dev/null || echo "")"
+  ARTIFACT_ID="$(yq e -r '.api.artifactId // .artifactId // ""' "$META_PATH" 2>/dev/null || echo "")"
+  GROUP_ID="$(yq e -r '.api.groupId // .groupId // ""' "$META_PATH" 2>/dev/null || echo "")"
 fi
 
 if [[ "${PUBLISH}" != "true" ]]; then
@@ -56,13 +57,13 @@ if [[ "${PUBLISH}" != "true" ]]; then
   exit 0
 fi
 
-# Default artifactId if not provided (match Gradle path-driven default as close as possible)
-# build.gradle defaults: "$apiName-$apiVersion"
+# Default artifactId if not provided (align with Maven artifactId convention in your org)
+# Example: auth-api-v1
 if [[ -z "${ARTIFACT_ID}" ]]; then
   ARTIFACT_ID="${API_NAME}-${API_VERSION}"
 fi
 
-# NPM package name = scope + artifactId (equivalent mental model to Maven artifactId)
+# NPM package name = scope + artifactId (equivalent to Maven artifactId)
 # NPM requires lowercase
 PKG_NAME="${NPM_SCOPE}/$(echo "${ARTIFACT_ID}" | tr '[:upper:]' '[:lower:]')"
 
