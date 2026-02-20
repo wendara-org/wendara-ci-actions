@@ -169,7 +169,14 @@ jobs:
         run: |
           set -euo pipefail
           SPEC="${{ steps.resolve.outputs.spec_path }}"
-          BASE_VERSION="$(yq -r '.info.version // empty' "${SPEC}" 2>/dev/null || true)"
+
+          echo "🔎 SPEC=${SPEC}"
+          ls -la "${SPEC}" || true
+          echo "----- HEAD(40) ${SPEC} -----"
+          sed -n '1,40p' "${SPEC}" || true
+          echo "----------------------------"
+
+          BASE_VERSION="$(yq e -r '.info.version // empty' "${SPEC}" 2>/dev/null || true)"
           if [[ -z "${BASE_VERSION}" ]]; then
             echo "❌ Cannot resolve .info.version from ${SPEC}"
             exit 2
@@ -204,8 +211,8 @@ jobs:
           artifactId=""
 
           if [[ -f "${META}" ]]; then
-            groupId="$(yq -r '.api.groupId // .groupId // ""' "${META}" 2>/dev/null || echo "")"
-            artifactId="$(yq -r '.api.artifactId // .artifactId // ""' "${META}" 2>/dev/null || echo "")"
+            groupId="$(yq e -r '.api.groupId // .groupId // ""' "${META}" 2>/dev/null || echo "")"
+            artifactId="$(yq e -r '.api.artifactId // .artifactId // ""' "${META}" 2>/dev/null || echo "")"
           fi
 
           if [[ -z "${groupId}" || -z "${artifactId}" ]]; then
@@ -246,11 +253,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Compute npm coords in the same way the script will do it, then skip if it exists.
-          # Package naming is aligned with your current Maven artifactId style (api + transport + version).
-          #
-          # NOTE: If your script already implements the skip internally, this is redundant but harmless.
-          baseVersion="$(yq -r '.info.version // empty' "${SPEC}" 2>/dev/null || true)"
+          baseVersion="$(yq e -r '.info.version // empty' "${SPEC}" 2>/dev/null || true)"
           if [[ -z "${baseVersion}" ]]; then
             echo "❌ Cannot resolve .info.version from ${SPEC}"
             exit 2
