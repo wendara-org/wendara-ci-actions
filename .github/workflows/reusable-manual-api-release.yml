@@ -95,7 +95,7 @@ jobs:
       CHANNEL: "${{ inputs.channel }}"
       TARGET: "${{ inputs.target }}"
       GH_TOKEN_PACKAGES: "${{ secrets.PACKAGES_TOKEN || github.token }}"
-      # Registry endpoints for GitHub Packages (do not confuse "GitHub Packages" with "Maven the product")
+      # Registry endpoints for GitHub Packages
       MAVEN_REPO_URL: "https://maven.pkg.github.com/wendara-org/wendara-api-definitions"
       NPM_REGISTRY: "https://npm.pkg.github.com"
       NPM_SCOPE: "@wendara-org"
@@ -142,7 +142,6 @@ jobs:
             exit 2
           fi
 
-          # Find definition-path by (id + transport + version)
           # NOTE: yq is NOT jq; it doesn't support --arg. Use strenv() to read env vars.
           SPEC_PATH="$(yq e -r \
             '.apis[]
@@ -171,9 +170,6 @@ jobs:
           SPEC="${{ steps.resolve.outputs.spec_path }}"
 
           echo "🔎 SPEC=${SPEC}"
-          ls -la "${SPEC}"
-          echo "----- HEAD(60) ${SPEC} -----"
-          sed -n '1,60p' "${SPEC}"
           echo "----------------------------"
 
           # 1) Primary: yq parsing (do NOT silence errors; we want the real failure reason)
@@ -271,31 +267,32 @@ jobs:
         env:
           NODE_AUTH_TOKEN: "${{ secrets.PACKAGES_TOKEN || github.token }}"
           SPEC: "${{ steps.resolve.outputs.spec_path }}"
+          BASE_VERSION: "${{ steps.version.outputs.base_version }}"
         shell: bash
         run: |
           set -euo pipefail
 
-          baseVersion="$(yq e -r '.info.version // empty' "${SPEC}" 2>/dev/null || true)"
-          if [[ -z "${baseVersion}" ]]; then
-            echo "❌ Cannot resolve .info.version from ${SPEC}"
+          if [[ -z "${BASE_VERSION}" ]]; then
+            echo "❌ Missing BASE_VERSION from previous step outputs"
             exit 2
           fi
 
           # Mirror script rules: RELEASE uses baseVersion; SNAPSHOT is unique.
           if [[ "${CHANNEL}" == "RELEASE" ]]; then
-            npmVer="${baseVersion}"
+            npmVer="${BASE_VERSION}"
           else
             runNo="${GITHUB_RUN_NUMBER:-0}"
-            npmVer="${baseVersion}-snapshot.${runNo}"
+            npmVer="${BASE_VERSION}-snapshot.${runNo}"
           fi
 
-          # Build package name from path: apis/<apiName>/<transport>/<apiVersion>/openapi.yaml
-          IFS='/' read -r _ apiName transport apiVersion _ <<< "${SPEC}"
-          pkg="${NPM_SCOPE}/${apiName}-${transport}-${apiVersion}-contracts"
+          # Input-based naming (stable): do NOT depend on folder names like "auth-api".
+          pkg="${NPM_SCOPE}/${API_ID}-${TRANSPORT}-${API_VERSION}-contracts"
 
           if npm view "${pkg}@${npmVer}" >/dev/null 2>&1; then
             echo "✅ npm package already exists, skipping: ${pkg}@${npmVer}"
             exit 0
+          else
+            echo "ℹ️ npm package not found (or cannot be viewed). Will attempt publish: ${pkg}@${npmVer}"
           fi
 
           echo "📦 Publishing npm contract via script: ${pkg}@${npmVer}"
@@ -314,4 +311,5 @@ jobs:
           echo "spec_path=${{ steps.resolve.outputs.spec_path }}"
           echo "openapi.info.version=${{ steps.version.outputs.base_version }}"
           echo "final_version=${{ steps.version.outputs.final_version }}"
+          echo "npm_pkg=${NPM_SCOPE}/${API_ID}-${TRANSPORT}-${API_VERSION}-contracts"
           echo "==============================================================="
