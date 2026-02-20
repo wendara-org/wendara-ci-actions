@@ -143,11 +143,11 @@ jobs:
           fi
 
           # Find definition-path by (id + transport + version)
-          SPEC_PATH="$(yq -r \
-            --arg id "${API_ID}" \
-            --arg t "${TRANSPORT}" \
-            --arg v "${API_VERSION}" \
-            '.apis[] | select(.id == $id and .transport == $t and .version == $v) | ."definition-path"' \
+          # NOTE: yq is NOT jq; it doesn't support --arg. Use strenv() to read env vars.
+          SPEC_PATH="$(yq e -r \
+            '.apis[]
+              | select(.id == strenv(API_ID) and .transport == strenv(TRANSPORT) and .version == strenv(API_VERSION))
+              | ."definition-path"' \
             "${ROOT_META}" | head -n 1)"
 
           if [[ -z "${SPEC_PATH}" || "${SPEC_PATH}" == "null" ]]; then
