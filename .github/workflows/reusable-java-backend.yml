@@ -84,7 +84,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 1 }
 
       - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
@@ -102,7 +102,10 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
-          cache-dependency-path: code/**/*.kts
+          cache-dependency-path: |
+            code/**/*.gradle*
+            code/**/gradle.properties
+            code/gradle/wrapper/gradle-wrapper.properties
 
       - name: Configure Gradle credentials (GitHub Packages via PAT)
         shell: bash
@@ -139,7 +142,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 1 }
 
       - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
@@ -157,7 +160,10 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
-          cache-dependency-path: code/**/*.kts
+          cache-dependency-path: |
+            code/**/*.gradle*
+            code/**/gradle.properties
+            code/gradle/wrapper/gradle-wrapper.properties
 
       - name: Configure Gradle credentials (GitHub Packages via PAT)
         shell: bash
@@ -190,7 +196,7 @@ jobs:
 
       - name: Generate JaCoCo report
         working-directory: code
-        run: ./gradlew jacocoTestReport --no-daemon
+        run: ./gradlew jacocoTestReport --build-cache --parallel --configuration-cache
 
       - name: Upload JaCoCo HTML
         uses: actions/upload-artifact@v4
@@ -205,7 +211,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 1 }
 
       - name: Checkout ci-actions (scripts)
         uses: actions/checkout@v4
@@ -217,11 +223,16 @@ jobs:
       - name: Make scripts executable
         run: chmod +x .wendara-ci-actions/scripts/*.sh .wendara-ci-actions/scripts/java/*.sh
 
-      - name: Set up Java
+      - name: Set up Java (Gradle cache)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
+          cache: gradle
+          cache-dependency-path: |
+            code/**/*.gradle*
+            code/**/gradle.properties
+            code/gradle/wrapper/gradle-wrapper.properties
 
       - name: Configure Gradle credentials (GitHub Packages via PAT)
         shell: bash

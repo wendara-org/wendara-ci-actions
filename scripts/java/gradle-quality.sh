@@ -15,8 +15,16 @@ if [ -z "${FIRST_JAVA_FILE}" ]; then
   echo "⚠️ No Java source files found under 'code/'. Skipping quality checks."
   exit 0
 fi
-# Checkstyle - Google style (expected config in a known location)
-echo "Building Project and verifying Checkstyle, PMD, SpotBugs..."
-./gradlew build --no-daemon --stacktrace
+# Build (without tests) + static analysis.
+echo "Running assemble + Checkstyle, PMD and SpotBugs..."
+./gradlew \
+  assemble \
+  checkstyleMain checkstyleTest \
+  pmdMain pmdTest \
+  spotbugsMain spotbugsTest \
+  --build-cache \
+  --parallel \
+  --configuration-cache \
+  --stacktrace
 
 echo "✅ Quality checks completed successfully."
