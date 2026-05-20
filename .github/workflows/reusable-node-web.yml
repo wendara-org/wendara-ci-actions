@@ -37,7 +37,6 @@ on:
 
 permissions:
   contents: write
-  packages: read
   pull-requests: write
   checks: write
 
@@ -75,18 +74,10 @@ jobs:
         run: |
           set -euo pipefail
           echo "registry=https://registry.npmjs.org/" > .npmrc.ci
-
-          # Configure GitHub Packages only when the project actually depends on @wendara-org packages.
-          if grep -Eq '"@wendara-org/' package.json package-lock.json 2>/dev/null; then
-            TOKEN="${{ secrets.GPR_TOKEN }}"
-            if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
-            if [ -z "${TOKEN:-}" ]; then
-              echo "Error: @wendara-org private dependencies detected but no token available." >&2
-              exit 1
-            fi
-            echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
-            echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
-          fi
+          echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
+          TOKEN="${{ secrets.GPR_TOKEN }}"
+          if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
+          echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
 
       - name: Install dependencies
         run: npm ci
@@ -120,18 +111,10 @@ jobs:
         run: |
           set -euo pipefail
           echo "registry=https://registry.npmjs.org/" > .npmrc.ci
-
-          # Configure GitHub Packages only when the project actually depends on @wendara-org packages.
-          if grep -Eq '"@wendara-org/' package.json package-lock.json 2>/dev/null; then
-            TOKEN="${{ secrets.GPR_TOKEN }}"
-            if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
-            if [ -z "${TOKEN:-}" ]; then
-              echo "Error: @wendara-org private dependencies detected but no token available." >&2
-              exit 1
-            fi
-            echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
-            echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
-          fi
+          echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
+          TOKEN="${{ secrets.GPR_TOKEN }}"
+          if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
+          echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
 
       - name: Install dependencies
         run: npm ci
@@ -166,18 +149,10 @@ jobs:
         run: |
           set -euo pipefail
           echo "registry=https://registry.npmjs.org/" > .npmrc.ci
-
-          # Configure GitHub Packages only when the project actually depends on @wendara-org packages.
-          if grep -Eq '"@wendara-org/' package.json package-lock.json 2>/dev/null; then
-            TOKEN="${{ secrets.GPR_TOKEN }}"
-            if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
-            if [ -z "${TOKEN:-}" ]; then
-              echo "Error: @wendara-org private dependencies detected but no token available." >&2
-              exit 1
-            fi
-            echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
-            echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
-          fi
+          echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
+          TOKEN="${{ secrets.GPR_TOKEN }}"
+          if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
+          echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
 
       - name: Install dependencies
         run: npm ci
@@ -233,18 +208,10 @@ jobs:
         run: |
           set -euo pipefail
           echo "registry=https://registry.npmjs.org/" > .npmrc.ci
-
-          # Configure GitHub Packages only when the project actually depends on @wendara-org packages.
-          if grep -Eq '"@wendara-org/' package.json package-lock.json 2>/dev/null; then
-            TOKEN="${{ secrets.GPR_TOKEN }}"
-            if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
-            if [ -z "${TOKEN:-}" ]; then
-              echo "Error: @wendara-org private dependencies detected but no token available." >&2
-              exit 1
-            fi
-            echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
-            echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
-          fi
+          echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
+          TOKEN="${{ secrets.GPR_TOKEN }}"
+          if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
+          echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
 
       - name: Install dependencies
         run: npm ci
@@ -339,18 +306,10 @@ jobs:
         run: |
           set -euo pipefail
           echo "registry=https://registry.npmjs.org/" > .npmrc.ci
-
-          # Configure GitHub Packages only when the project actually depends on @wendara-org packages.
-          if grep -Eq '"@wendara-org/' package.json package-lock.json 2>/dev/null; then
-            TOKEN="${{ secrets.GPR_TOKEN }}"
-            if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
-            if [ -z "${TOKEN:-}" ]; then
-              echo "Error: @wendara-org private dependencies detected but no token available." >&2
-              exit 1
-            fi
-            echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
-            echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
-          fi
+          echo "@wendara-org:registry=https://npm.pkg.github.com" >> .npmrc.ci
+          TOKEN="${{ secrets.GPR_TOKEN }}"
+          if [ -z "${TOKEN:-}" ]; then TOKEN="${{ secrets.GITHUB_TOKEN }}"; fi
+          echo "//npm.pkg.github.com/:_authToken=${TOKEN}" >> .npmrc.ci
 
       - name: Install dependencies
         run: npm ci
