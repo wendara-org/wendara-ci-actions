@@ -325,7 +325,7 @@ jobs:
           echo "======================================================"
 
       - name: Upload changelog artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: api-changelog
           path: CHANGELOG.md
@@ -376,7 +376,7 @@ jobs:
           done
 
       - name: Upload Redoc previews
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: redoc-previews
           path: redoc-previews/

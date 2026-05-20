@@ -180,7 +180,7 @@ jobs:
 
       - name: Upload EAS outputs (JSON)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: eas-json-${{ inputs.tag }}-${{ inputs.platform }}-${{ inputs.eas-profile }}
           path: |
