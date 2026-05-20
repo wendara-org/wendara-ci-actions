@@ -19,7 +19,7 @@ Reusable GitHub Actions **workflows** and **helper scripts** for Wendara’s eng
   - [API‑first (`reusable-api-contracts.yml`)](#apifirst-reusable-api-contractsyml)
   - [Contract Validation Only (`reusable-verify-contracts.yml`)](#contract-validation-only-reusable-verify-contractsyml)
   - [Java Backend (`reusable-java-backend.yml`)](#java-backend-reusable-java-backendyml)
-  - [Node Apps (`reusable-node-app.yml`)](#node-apps-reusable-node-appyml)
+  - [Node Web Apps (`reusable-node-web.yml`)](#node-web-apps-reusable-node-webyml)
   - [Node Mobile Apps (`reusable-node-mobile.yml`)](#node-mobile-apps-reusable-node-mobileyml)
   - [Manual API Release (`reusable-manual-api-release.yml`)](#manual-api-release-reusable-manual-api-releaseyml)
 - [Helper Scripts](#helper-scripts)
@@ -69,11 +69,15 @@ wendara-ci-actions/
 │  │  ├─ start-java-integration-env.sh     # Start Docker Compose (Mongo pinned + healthcheck)
 │  │  ├─ run-java-integration-tests.sh     # Run integration tests
 │  │  └─ stop-java-integration-env.sh      # Stop Docker Compose
+│  ├─ web/
+│  │  ├─ build-web-dist.sh                 # Build web dist output
+│  │  └─ package-web-dist.sh               # Package dist into versioned tgz + sha256
 └─ .github/
    └─ workflows/
       ├─ reusable-api-contracts.yml
       ├─ reusable-verify-contracts.yml
       ├─ reusable-java-backend.yml              # Java backend CI (Gradle, tests, semantic-release, Jib)
+      ├─ reusable-node-web.yml
       ├─ reusable-node-mobile.yml
       ├─ mobile-build.yml
       └─ reusable-manual-post-release.yml
@@ -300,44 +304,57 @@ jobs:
 
 ---
 
-### Node Apps (`reusable-node-app.yml`)
+### Node Web Apps (`reusable-node-web.yml`)
 
-Reusable CI pipeline for **Node.js** / **TypeScript** apps, including web (React, Next.js) and mobile (React Native).
+Reusable CI pipeline for **Node.js** web apps (React, Vite, Next.js static build) with artifact packaging.
 
 **What it does**
 
 1. Runs code quality checks:
 
-- `tsc --noEmit`
-- `eslint`
-- unit tests (e.g., Jest)
+- `npm run lint`
+- `npm test`
+- (Optional) `npm run test:integration` if script exists
 
-2. (Optional) Runs a production build if `run_build: true`
+2. Builds web output (`npm run build`) and validates `dist/`.
+3. Packages output as `dist-<version>.tgz` + `.sha256` artifact.
+4. Runs semantic-release on `develop`/`main`.
+5. Cleans old prereleases on `develop`.
+6. Syncs `main` back to `develop` after stable release.
 
 **Inputs**
 
-| Name           | Type    | Default | Description                                |
-|----------------|---------|---------|--------------------------------------------|
-| `node_version` | string  | `24`    | Node.js version for setup.                 |
-| `run_build`    | boolean | `false` | If true, runs `npm run build` after tests. |
+| Name                | Type   | Default | Description                                  |
+|---------------------|--------|---------|----------------------------------------------|
+| `release-channel`   | string |         | `develop` or `main`. Empty disables release. |
+| `node-version`      | string | `24`    | Node.js version for setup.                   |
+| `working-directory` | string | `.`     | Directory where `package.json` lives.        |
+| `dist-directory`    | string | `dist`  | Build output directory to package.           |
+| `keep-prereleases`  | number | `10`    | How many prereleases to keep on develop.     |
 
 **Secrets**
 
-| Secret                       | Purpose                                           |
-|------------------------------|---------------------------------------------------|
-| `REVIEWDOG_GITHUB_API_TOKEN` | Required for inline PR annotations via reviewdog. |
+| Secret      | Purpose                                  |
+|-------------|------------------------------------------|
+| `GPR_USER`  | Optional user for GitHub Packages auth.  |
+| `GPR_TOKEN` | Optional token for GitHub Packages auth. |
 
 **Jobs**
 
-| Job              | Description                                  |
-|------------------|----------------------------------------------|
-| `quality-checks` | Runs `tsc`, `eslint`, and unit tests.        |
-| `build`          | Runs `npm run build` if `run_build` is true. |
+| Job                 | Description                                                  |
+|---------------------|--------------------------------------------------------------|
+| `lint`              | Runs `npm run lint`.                                         |
+| `unit-tests`        | Runs `npm test`.                                             |
+| `integration-tests` | Runs `npm run test:integration` if script exists.            |
+| `build`             | Builds `dist` and uploads `dist-<version>.tgz` + checksum.   |
+| `release`           | Runs semantic-release for versioning/tags (on develop/main). |
+| `snapshot-cleanup`  | Cleans up old prereleases (develop only).                    |
+| `sync-pr`           | Creates PR to sync main → develop after release (main only). |
 
-**Example usage** (`wendara-web/.github/workflows/ci.yml` or `wendara-mobile/.github/workflows/ci.yml`):
+**Example usage** (`wendara-landing/.github/workflows/ci.yml`):
 
 ```yaml
-name: Mobile · CI
+name: Landing · CI
 
 on:
   push:
@@ -352,22 +369,16 @@ permissions:
   issues: write
   checks: write
 
-concurrency:
-  group: wendara-mobile-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  mobile:
-    uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-node-mobile.yml@main
+  landing:
+    uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-node-web.yml@main
     with:
-      node-version: "24"
       working-directory: "."
+      dist-directory: "dist"
       release-channel: ${{ github.event_name == 'push' && github.ref_name || '' }}
-      run-build: false
     secrets:
       GPR_USER: ${{ secrets.GPR_USER }}
       GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 ```
 
 ---
@@ -748,6 +759,7 @@ reviewers can inspect docs without running anything locally.
 |---------------------------|------------------------------|
 | `wendara-api-definitions` | `reusable-api-contracts.yml` |
 | `wendara-backend`         | `reusable-java-backend.yml`  |
+| `wendara-landing`         | `reusable-node-web.yml`      |
 | `wendara-mobile`          | `reusable-node-mobile.yml`   |
 | `wendara-mobile`          | `mobile-build.yml`           |
 
