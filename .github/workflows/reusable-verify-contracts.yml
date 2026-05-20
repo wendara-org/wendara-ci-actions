@@ -6,7 +6,7 @@ on:
       node_version:
         description: "Node version"
         required: false
-        default: "20"
+        default: "24"
         type: string
 
 permissions:
@@ -21,19 +21,19 @@ jobs:
       REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout consumer repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout ci-actions (to get scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
           ref: main
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node_version }}
 

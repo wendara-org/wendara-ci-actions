@@ -59,7 +59,7 @@ on:
       node_version:
         description: "Node version for Redoc/linters"
         required: false
-        default: "22"
+        default: "24"
         type: string
       run_redoc:
         description: "Generate Redoc HTML previews"
@@ -112,7 +112,7 @@ jobs:
       any_changed: ${{ steps.collect.outputs.any_changed }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -199,7 +199,7 @@ jobs:
     if: needs.detect.outputs.any_changed == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -211,7 +211,7 @@ jobs:
           configFile: .commitlintrc.json
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node_version }}
 
@@ -245,12 +245,12 @@ jobs:
       REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout consumer repo (full history)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -339,12 +339,12 @@ jobs:
     if: needs.detect.outputs.any_changed == 'true' && inputs.run_redoc
     steps:
       - name: Checkout consumer repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout ci-actions (to get scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -354,7 +354,7 @@ jobs:
         run: chmod -R +x .wendara-ci-actions/scripts
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node_version }}
 
@@ -394,7 +394,7 @@ jobs:
       release_channel: ${{ steps.channel.outputs.value }}
     steps:
       - name: Checkout consumer repo (api-definitions)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -405,7 +405,7 @@ jobs:
           yq --version
 
       - name: Setup Java (Gradle)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ inputs.java_version }}
@@ -560,12 +560,12 @@ jobs:
       packages: write
     steps:
       - name: Checkout consumer repo (api-definitions)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -581,7 +581,7 @@ jobs:
           yq --version
 
       - name: Setup Node (GitHub Packages npm registry)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node_version }}
           registry-url: https://npm.pkg.github.com
@@ -736,7 +736,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.PACKAGES_TOKEN || github.token }}

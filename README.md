@@ -173,7 +173,7 @@ jobs:
     uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-api-contracts.yml@main
     with:
       java_version: "21"
-      node_version: "22"
+      node_version: "24"
       run_redoc: true
       publish_enabled: ${{ github.event_name == 'push' }}
       require_listed_only: true
@@ -220,7 +220,7 @@ jobs:
   verify:
     uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-verify-contracts.yml@main
     with:
-      node_version: "20"
+      node_version: "24"
 ```
 
 ---

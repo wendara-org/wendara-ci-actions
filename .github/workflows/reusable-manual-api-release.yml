@@ -113,12 +113,12 @@ jobs:
           echo "✅ main-only guard passed"
 
       - name: Checkout consumer repo (api-definitions)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -255,9 +255,9 @@ jobs:
 
       - name: Setup Node (npm registry)
         if: env.TARGET == 'npm' || env.TARGET == 'both'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "24"
           registry-url: "https://npm.pkg.github.com"
           scope: "@wendara-org"
 
