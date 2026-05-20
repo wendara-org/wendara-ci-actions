@@ -10,7 +10,7 @@ on:
       node-version:
         description: "Node version to use"
         required: false
-        default: "22.14.0"
+        default: "24"
         type: string
       working-directory:
         description: "Working directory where package.json lives"
@@ -59,12 +59,12 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - name: Checkout caller repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -74,7 +74,7 @@ jobs:
         run: chmod -R +x .wendara-ci-actions/scripts
 
       - name: Set up Node (with npm cache)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node-version }}
           cache: npm
@@ -107,12 +107,12 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - name: Checkout caller repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -122,7 +122,7 @@ jobs:
         run: chmod -R +x .wendara-ci-actions/scripts
 
       - name: Set up Node (with npm cache)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node-version }}
           cache: npm
@@ -155,12 +155,12 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - name: Checkout caller repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -170,7 +170,7 @@ jobs:
         run: chmod -R +x .wendara-ci-actions/scripts
 
       - name: Set up Node (with npm cache)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node-version }}
           cache: npm
@@ -204,12 +204,12 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - name: Checkout caller repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Set up Node (with npm cache)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node-version }}
           cache: npm
@@ -242,13 +242,13 @@ jobs:
       tag: ${{ steps.post.outputs.tag }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -258,7 +258,7 @@ jobs:
         run: chmod -R +x .wendara-ci-actions/scripts
 
       - name: Set up Node (with npm cache)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node-version }}
           cache: npm
@@ -384,13 +384,13 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions

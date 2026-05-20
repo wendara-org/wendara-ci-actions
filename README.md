@@ -318,7 +318,7 @@ Reusable CI pipeline for **Node.js** / **TypeScript** apps, including web (React
 
 | Name           | Type    | Default | Description                                |
 |----------------|---------|---------|--------------------------------------------|
-| `node_version` | string  | `20`    | Node.js version for setup.                 |
+| `node_version` | string  | `24`    | Node.js version for setup.                 |
 | `run_build`    | boolean | `false` | If true, runs `npm run build` after tests. |
 
 **Secrets**
@@ -360,7 +360,7 @@ jobs:
   mobile:
     uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-node-mobile.yml@main
     with:
-      node-version: "20"
+      node-version: "24"
       working-directory: "."
       release-channel: ${{ github.event_name == 'push' && github.ref_name || '' }}
       run-build: false
@@ -395,7 +395,7 @@ unit/integration tests, semantic release, snapshot cleanup, and main→develop s
 | Name                | Type   | Default | Description                                  |
 |---------------------|--------|---------|----------------------------------------------|
 | `release-channel`   | string |         | `develop` or `main`. Empty disables release. |
-| `node-version`      | string | `20`    | Node.js version for setup.                   |
+| `node-version`      | string | `24`    | Node.js version for setup.                   |
 | `working-directory` | string | `.`     | Directory where `package.json` lives.        |
 | `keep-prereleases`  | number | `10`    | How many prereleases to keep on develop.     |
 
@@ -445,7 +445,7 @@ jobs:
   mobile:
     uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-node-mobile.yml@main
     with:
-      node-version: "20"
+      node-version: "24"
       working-directory: "."
       release-channel: ${{ github.event_name == 'push' && github.ref_name || '' }}
       run-build: false
