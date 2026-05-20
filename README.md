@@ -678,7 +678,7 @@ env:
 * Changelog under `docs/CHANGELOG.md`.
 * `package.json` (and optional `.releaserc*.json`) at the **repo root** (siblings of `code/` and `docs/`).
 
-**Branch behavior (semantic-release at repo root, Node 20/21):**
+**Branch behavior (semantic-release at repo root, Node 24):**
 
 * **develop** → computes a **pre-release** (e.g., `v1.2.0-develop.1`).
   ➜ Does **not** modify `code/gradle.properties` or `docs/CHANGELOG.md`.
@@ -697,7 +697,7 @@ env:
 > Tip: pass the channel to the resolver so it prefers tags on `develop`:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v6
   with: { fetch-depth: 0 } # ensure tags are available
 - name: Resolve VERSION
   id: ver
@@ -787,5 +787,5 @@ Use `@main` while iterating, and switch to tag or SHA for production stability.
 | **OWASP step skipped**               | Runs only on **main**, after release, and only if a version was resolved (report-only).                                                               |
 | **Sync PR not created**              | Happens if no new commits landed on `main` or the release did not produce a new tag.                                                                  |
 | **Gradle version not bumped (main)** | Check `scripts/bump-gradle-version.sh` exists and is executable; verify `@semantic-release/exec` is configured in the **main** config.                |
-| **Git tags not found**               | Use `actions/checkout@v4` with `fetch-depth: 0` (or fetch tags before calling `read-gradle-version.sh`).                                              |
+| **Git tags not found**               | Use `actions/checkout@v6` with `fetch-depth: 0` (or fetch tags before calling `read-gradle-version.sh`).                                              |
 | **Image not pushed (backend)**       | Confirm GHCR login, `packages: write` permission, and Jib params (`-Pversion=...`) are set correctly.                                                 |

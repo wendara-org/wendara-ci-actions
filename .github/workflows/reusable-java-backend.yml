@@ -83,11 +83,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout backend
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with: { fetch-depth: 1 }
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -97,7 +97,7 @@ jobs:
         run: chmod +x .wendara-ci-actions/scripts/*.sh .wendara-ci-actions/scripts/java/*.sh
 
       - name: Set up Java (Gradle cache)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -141,11 +141,11 @@ jobs:
     needs: quality-checks
     steps:
       - name: Checkout backend
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with: { fetch-depth: 1 }
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -155,7 +155,7 @@ jobs:
         run: chmod +x .wendara-ci-actions/scripts/*.sh .wendara-ci-actions/scripts/java/*.sh
 
       - name: Set up Java (Gradle cache)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -210,11 +210,11 @@ jobs:
     needs: quality-checks
     steps:
       - name: Checkout backend
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with: { fetch-depth: 1 }
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -224,7 +224,7 @@ jobs:
         run: chmod +x .wendara-ci-actions/scripts/*.sh .wendara-ci-actions/scripts/java/*.sh
 
       - name: Set up Java (Gradle cache)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -288,21 +288,21 @@ jobs:
       post_version: ${{ steps.post.outputs.post_version }}
     steps:
       - name: Checkout backend
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
           ref: main
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -382,11 +382,11 @@ jobs:
     if: ${{ success() && needs.release.outputs.published == 'true' }}
     steps:
       - name: Checkout backend
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with: { fetch-depth: 0 }
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -396,7 +396,7 @@ jobs:
         run: chmod +x .wendara-ci-actions/scripts/*.sh .wendara-ci-actions/scripts/java/*.sh
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -440,7 +440,7 @@ jobs:
           echo "Using VERSION=${{ needs.release.outputs.released_version || steps.ver.outputs.version }}"
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -457,11 +457,11 @@ jobs:
     if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'develop' }}
     steps:
       - name: Checkout backend
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with: { fetch-depth: 0 }
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -502,13 +502,13 @@ jobs:
 
     steps:
       - name: Checkout backend
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout ci-actions (scripts)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wendara-org/wendara-ci-actions
           path: .wendara-ci-actions
@@ -617,11 +617,11 @@ jobs:
     continue-on-error: true
     steps:
       - name: Checkout backend
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with: { fetch-depth: 0 }
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
