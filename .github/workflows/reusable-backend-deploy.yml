@@ -77,8 +77,10 @@ jobs:
         env:
           DEV_SSH_HOST: ${{ vars.DEV_SSH_HOST }}
           DEV_SSH_USER: ${{ vars.DEV_SSH_USER }}
+          DEV_SSH_KEY_FINGERPRINT: ${{ vars.DEV_SSH_KEY_FINGERPRINT }}
           PROD_SSH_HOST: ${{ vars.PROD_SSH_HOST }}
           PROD_SSH_USER: ${{ vars.PROD_SSH_USER }}
+          PROD_SSH_KEY_FINGERPRINT: ${{ vars.PROD_SSH_KEY_FINGERPRINT }}
         run: |
           set -euo pipefail
           TARGET="${{ inputs.target-environment }}"
@@ -87,11 +89,13 @@ jobs:
             echo "ssh_user=${DEV_SSH_USER}" >> "$GITHUB_OUTPUT"
             echo "deploy_base_dir=/opt/wendara/dev" >> "$GITHUB_OUTPUT"
             echo "deploy_script=/opt/wendara/dev/scripts/deploy-dev.sh" >> "$GITHUB_OUTPUT"
+            echo "expected_fingerprint=${DEV_SSH_KEY_FINGERPRINT}" >> "$GITHUB_OUTPUT"
           else
             echo "ssh_host=${PROD_SSH_HOST}" >> "$GITHUB_OUTPUT"
             echo "ssh_user=${PROD_SSH_USER}" >> "$GITHUB_OUTPUT"
             echo "deploy_base_dir=/opt/wendara/prod" >> "$GITHUB_OUTPUT"
             echo "deploy_script=/opt/wendara/prod/scripts/deploy-prod.sh" >> "$GITHUB_OUTPUT"
+            echo "expected_fingerprint=${PROD_SSH_KEY_FINGERPRINT}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Validate required environment variables
@@ -135,6 +139,14 @@ jobs:
             echo "Expected an unencrypted private key in OpenSSH/PEM format."
             exit 1
           fi
+          ACTUAL_FP="$(ssh-keygen -y -f "${KEY_FILE}" | ssh-keygen -lf - | awk '{print $2}')"
+          echo "Resolved DEV key fingerprint: ${ACTUAL_FP}"
+          if [[ -n "${{ steps.cfg.outputs.expected_fingerprint }}" && "${ACTUAL_FP}" != "${{ steps.cfg.outputs.expected_fingerprint }}" ]]; then
+            echo "❌ DEV key fingerprint mismatch."
+            echo "Expected: ${{ steps.cfg.outputs.expected_fingerprint }}"
+            echo "Actual:   ${ACTUAL_FP}"
+            exit 1
+          fi
 
           ssh-add "${KEY_FILE}"
 
@@ -159,6 +171,14 @@ jobs:
             echo "❌ Invalid PROD_SSH_PRIVATE_KEY_B64 content (or encrypted with passphrase)."
             echo "Hint: PROD_SSH_PRIVATE_KEY_B64 must be base64 of the full private key file."
             echo "Expected an unencrypted private key in OpenSSH/PEM format."
+            exit 1
+          fi
+          ACTUAL_FP="$(ssh-keygen -y -f "${KEY_FILE}" | ssh-keygen -lf - | awk '{print $2}')"
+          echo "Resolved PROD key fingerprint: ${ACTUAL_FP}"
+          if [[ -n "${{ steps.cfg.outputs.expected_fingerprint }}" && "${ACTUAL_FP}" != "${{ steps.cfg.outputs.expected_fingerprint }}" ]]; then
+            echo "❌ PROD key fingerprint mismatch."
+            echo "Expected: ${{ steps.cfg.outputs.expected_fingerprint }}"
+            echo "Actual:   ${ACTUAL_FP}"
             exit 1
           fi
 
