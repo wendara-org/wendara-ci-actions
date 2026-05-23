@@ -116,7 +116,8 @@ jobs:
           DEPLOY_SCRIPT: ${{ steps.cfg.outputs.deploy_script }}
           GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
 
-      - name: Start ssh-agent and load DEV key
+      - name: Load DEV key file
+        id: load_dev_key
         if: ${{ inputs.target-environment == 'dev' }}
         shell: bash
         env:
@@ -127,9 +128,7 @@ jobs:
             echo "❌ DEV_SSH_PRIVATE_KEY_B64 is empty or not available in the selected environment context."
             exit 1
           fi
-          eval "$(ssh-agent -s)"
-
-          KEY_FILE="$(mktemp)"
+          KEY_FILE="${RUNNER_TEMP}/deploy_key"
           echo "${SSH_PRIVATE_KEY_B64}" | base64 -d > "${KEY_FILE}"
           chmod 600 "${KEY_FILE}"
 
@@ -148,9 +147,10 @@ jobs:
             exit 1
           fi
 
-          ssh-add "${KEY_FILE}"
+          echo "key_file=${KEY_FILE}" >> "$GITHUB_OUTPUT"
 
-      - name: Start ssh-agent and load PROD key
+      - name: Load PROD key file
+        id: load_prod_key
         if: ${{ inputs.target-environment == 'prod' }}
         shell: bash
         env:
@@ -161,9 +161,7 @@ jobs:
             echo "❌ PROD_SSH_PRIVATE_KEY_B64 is empty or not available in the selected environment context."
             exit 1
           fi
-          eval "$(ssh-agent -s)"
-
-          KEY_FILE="$(mktemp)"
+          KEY_FILE="${RUNNER_TEMP}/deploy_key"
           echo "${SSH_PRIVATE_KEY_B64}" | base64 -d > "${KEY_FILE}"
           chmod 600 "${KEY_FILE}"
 
@@ -182,7 +180,7 @@ jobs:
             exit 1
           fi
 
-          ssh-add "${KEY_FILE}"
+          echo "key_file=${KEY_FILE}" >> "$GITHUB_OUTPUT"
 
       - name: Trust remote host key
         shell: bash
@@ -197,9 +195,10 @@ jobs:
           SSH_HOST: ${{ steps.cfg.outputs.ssh_host }}
           SSH_USER: ${{ steps.cfg.outputs.ssh_user }}
           DEPLOY_SCRIPT: ${{ steps.cfg.outputs.deploy_script }}
+          SSH_KEY_FILE: ${{ steps.load_dev_key.outputs.key_file || steps.load_prod_key.outputs.key_file }}
         run: |
           set -euo pipefail
-          ssh "${SSH_USER}@${SSH_HOST}" "test -x '${DEPLOY_SCRIPT}'"
+          ssh -i "${SSH_KEY_FILE}" -o IdentitiesOnly=yes "${SSH_USER}@${SSH_HOST}" "test -x '${DEPLOY_SCRIPT}'"
           echo "✅ Deploy script found and executable: ${DEPLOY_SCRIPT}"
 
       - name: Trigger remote deploy script
@@ -210,6 +209,7 @@ jobs:
           SSH_USER: ${{ steps.cfg.outputs.ssh_user }}
           DEPLOY_BASE_DIR: ${{ steps.cfg.outputs.deploy_base_dir }}
           DEPLOY_SCRIPT: ${{ steps.cfg.outputs.deploy_script }}
+          SSH_KEY_FILE: ${{ steps.load_dev_key.outputs.key_file || steps.load_prod_key.outputs.key_file }}
           GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           IMAGE_TAG: ${{ inputs.image-tag }}
@@ -222,7 +222,7 @@ jobs:
 
           set +e
           # Run deploy script remotely and keep full output for diagnostics.
-          ssh "${SSH_USER}@${SSH_HOST}" \
+          ssh -i "${SSH_KEY_FILE}" -o IdentitiesOnly=yes "${SSH_USER}@${SSH_HOST}" \
             "cd '${DEPLOY_BASE_DIR}' && GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' '${DEPLOY_SCRIPT}' '${IMAGE_TAG}'" \
             2>&1 | tee "${LOG_FILE}"
           DEPLOY_EXIT_CODE=${PIPESTATUS[0]}
