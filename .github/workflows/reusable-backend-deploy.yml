@@ -1,0 +1,216 @@
+name: Reusable Backend Deploy (DigitalOcean)
+
+on:
+  workflow_call:
+    inputs:
+      target-environment:
+        description: "Deployment target environment (dev|prod)"
+        required: false
+        default: dev
+        type: string
+      release-channel:
+        description: "Release channel that triggered deployment (must be develop for DEV)"
+        required: true
+        type: string
+      image-tag:
+        description: "Docker image tag to deploy (for example: 1.2.3-SNAPSHOT)"
+        required: true
+        type: string
+      package-name:
+        description: "GHCR package/image name (e.g. wendara-backend)"
+        required: true
+        type: string
+    secrets:
+      DEV_SSH_PRIVATE_KEY:
+        required: false
+      PROD_SSH_PRIVATE_KEY:
+        required: false
+      GHCR_TOKEN:
+        required: true
+
+  workflow_dispatch:
+    inputs:
+      target-environment:
+        description: "Deployment target environment (dev|prod)"
+        required: true
+        type: choice
+        options: [ dev, prod ]
+      release-channel:
+        description: "Release channel (DEV deploy only supports develop)"
+        required: true
+        type: choice
+        options: [ develop, main ]
+      image-tag:
+        description: "Docker image tag to deploy"
+        required: true
+        type: string
+      package-name:
+        description: "GHCR package/image name (e.g. wendara-backend)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy-dev:
+    name: Deploy backend (DigitalOcean)
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target-environment }}
+    if: >
+      (inputs.target-environment == 'dev' && inputs.release-channel == 'develop') ||
+      (inputs.target-environment == 'prod' && inputs.release-channel == 'main')
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.target-environment }}" != "dev" && "${{ inputs.target-environment }}" != "prod" ]]; then
+            echo "❌ target-environment must be dev or prod"
+            exit 1
+          fi
+
+      - name: Resolve environment-specific settings
+        id: cfg
+        shell: bash
+        env:
+          DEV_SSH_HOST: ${{ vars.DEV_SSH_HOST }}
+          DEV_SSH_USER: ${{ vars.DEV_SSH_USER }}
+          PROD_SSH_HOST: ${{ vars.PROD_SSH_HOST }}
+          PROD_SSH_USER: ${{ vars.PROD_SSH_USER }}
+        run: |
+          set -euo pipefail
+          TARGET="${{ inputs.target-environment }}"
+          if [[ "${TARGET}" == "dev" ]]; then
+            echo "ssh_host=${DEV_SSH_HOST}" >> "$GITHUB_OUTPUT"
+            echo "ssh_user=${DEV_SSH_USER}" >> "$GITHUB_OUTPUT"
+            echo "deploy_script=/opt/wendara/dev/scripts/deploy-dev.sh" >> "$GITHUB_OUTPUT"
+          else
+            echo "ssh_host=${PROD_SSH_HOST}" >> "$GITHUB_OUTPUT"
+            echo "ssh_user=${PROD_SSH_USER}" >> "$GITHUB_OUTPUT"
+            echo "deploy_script=/opt/wendara/prod/scripts/deploy-prod.sh" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate required environment variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in SSH_HOST SSH_USER GHCR_USERNAME DEPLOY_SCRIPT; do
+            if [[ -z "${!key:-}" ]]; then
+              echo "❌ Missing environment variable: ${key}"
+              exit 1
+            fi
+          done
+          echo "✅ Environment variables present"
+        env:
+          SSH_HOST: ${{ steps.cfg.outputs.ssh_host }}
+          SSH_USER: ${{ steps.cfg.outputs.ssh_user }}
+          DEPLOY_SCRIPT: ${{ steps.cfg.outputs.deploy_script }}
+          GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
+
+      - name: Start ssh-agent and load DEV key
+        if: ${{ inputs.target-environment == 'dev' }}
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
+
+      - name: Start ssh-agent and load PROD key
+        if: ${{ inputs.target-environment == 'prod' }}
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+
+      - name: Trust remote host key
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ steps.cfg.outputs.ssh_host }}" >> ~/.ssh/known_hosts
+
+      - name: Validate remote deploy script exists
+        shell: bash
+        env:
+          SSH_HOST: ${{ steps.cfg.outputs.ssh_host }}
+          SSH_USER: ${{ steps.cfg.outputs.ssh_user }}
+          DEPLOY_SCRIPT: ${{ steps.cfg.outputs.deploy_script }}
+        run: |
+          set -euo pipefail
+          ssh "${SSH_USER}@${SSH_HOST}" "test -x '${DEPLOY_SCRIPT}'"
+          echo "✅ Deploy script found and executable: ${DEPLOY_SCRIPT}"
+
+      - name: Trigger remote deploy script
+        id: deploy
+        shell: bash
+        env:
+          SSH_HOST: ${{ steps.cfg.outputs.ssh_host }}
+          SSH_USER: ${{ steps.cfg.outputs.ssh_user }}
+          DEPLOY_SCRIPT: ${{ steps.cfg.outputs.deploy_script }}
+          GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          PACKAGE_NAME: ${{ inputs.package-name }}
+        run: |
+          set -euo pipefail
+
+          LOG_FILE="deploy-output.log"
+          rm -f "${LOG_FILE}"
+
+          set +e
+          # Run deploy script remotely and keep full output for diagnostics.
+          ssh "${SSH_USER}@${SSH_HOST}" \
+            "GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' '${DEPLOY_SCRIPT}' '${IMAGE_TAG}'" \
+            2>&1 | tee "${LOG_FILE}"
+          DEPLOY_EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+
+          echo "exit_code=${DEPLOY_EXIT_CODE}" >> "$GITHUB_OUTPUT"
+
+          if grep -q "\[ROLLBACK\]" "${LOG_FILE}"; then
+            echo "rollback_detected=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rollback_detected=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if grep -q "Deploy successful:" "${LOG_FILE}"; then
+            echo "success_marker=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "success_marker=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Preserve deploy failure as job failure after collecting diagnostics.
+          if [[ "${DEPLOY_EXIT_CODE}" -ne 0 ]]; then
+            echo "❌ Remote deploy command failed with exit code ${DEPLOY_EXIT_CODE}"
+            exit "${DEPLOY_EXIT_CODE}"
+          fi
+
+      - name: Upload deploy log artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: backend-deploy-log-${{ inputs.target-environment }}-${{ inputs.image-tag }}
+          path: deploy-output.log
+          if-no-files-found: warn
+
+      - name: Deployment diagnostics summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Backend Deploy Diagnostics"
+            echo ""
+            echo "- Target environment: \`${{ inputs.target-environment }}\`"
+            echo "- Release channel: \`${{ inputs.release-channel }}\`"
+            echo "- Image tag: \`${{ inputs.image-tag }}\`"
+            echo "- Remote exit code: \`${{ steps.deploy.outputs.exit_code || 'n/a' }}\`"
+            echo "- Rollback detected: \`${{ steps.deploy.outputs.rollback_detected || 'unknown' }}\`"
+            echo "- Success marker detected: \`${{ steps.deploy.outputs.success_marker || 'unknown' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "target-environment=${{ inputs.target-environment }}"
+          echo "release-channel=${{ inputs.release-channel }}"
+          echo "package-name=${{ inputs.package-name }}"
+          echo "image-tag=${{ inputs.image-tag }}"

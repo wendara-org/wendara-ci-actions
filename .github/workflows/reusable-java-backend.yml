@@ -61,6 +61,19 @@ on:
         required: true
       GPR_TOKEN:
         required: true
+    outputs:
+      published:
+        description: "Whether a release was published (true|false)"
+        value: ${{ jobs.release.outputs.published }}
+      released_version:
+        description: "Released version resolved by semantic-release"
+        value: ${{ jobs.release.outputs.released_version }}
+      pre_version:
+        description: "Version before semantic-release"
+        value: ${{ jobs.release.outputs.pre_version }}
+      post_version:
+        description: "Version after semantic-release"
+        value: ${{ jobs.release.outputs.post_version }}
 
 permissions:
   contents: write

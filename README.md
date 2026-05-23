@@ -19,6 +19,7 @@ Reusable GitHub Actions **workflows** and **helper scripts** for Wendara’s eng
   - [API‑first (`reusable-api-contracts.yml`)](#apifirst-reusable-api-contractsyml)
   - [Contract Validation Only (`reusable-verify-contracts.yml`)](#contract-validation-only-reusable-verify-contractsyml)
   - [Java Backend (`reusable-java-backend.yml`)](#java-backend-reusable-java-backendyml)
+  - [Backend Deploy (`reusable-backend-deploy.yml`)](#backend-deploy-reusable-backend-deployyml)
   - [Node Web Apps (`reusable-node-web.yml`)](#node-web-apps-reusable-node-webyml)
   - [Node Mobile Apps (`reusable-node-mobile.yml`)](#node-mobile-apps-reusable-node-mobileyml)
   - [Manual API Release (`reusable-manual-api-release.yml`)](#manual-api-release-reusable-manual-api-releaseyml)
@@ -260,6 +261,15 @@ pipeline summary.
 |----------------|-----------------------------------------------------|
 | `GITHUB_TOKEN` | Used for semantic-release, GHCR push, and sync PRs. |
 
+**Outputs (`workflow_call`)**
+
+| Output             | Description                                        |
+|--------------------|----------------------------------------------------|
+| `published`        | `true` when semantic-release published a version.  |
+| `released_version` | Released version/tag used for Docker image publish. |
+| `pre_version`      | Version detected before semantic-release.          |
+| `post_version`     | Version detected after semantic-release.           |
+
 **Jobs**
 
 | Job                 | Description                                                        |
@@ -300,6 +310,88 @@ jobs:
     with:
       release-channel: ${{ github.ref_name }}
       package-name: wendara-backend
+```
+
+### Backend Deploy (`reusable-backend-deploy.yml`)
+
+Reusable deploy workflow for backend environments over SSH (current target: `dev` on DigitalOcean).
+
+**What it does**
+
+1. Resolves target settings by environment (`dev` or `prod`).
+2. Validates environment variables from GitHub Environment and SSH key availability.
+3. Connects via SSH, validates that the remote deploy script exists and is executable.
+4. Executes remote deploy script with selected image tag.
+5. Captures full remote output as log artifact and publishes a diagnostics summary.
+6. Fails this workflow if remote deployment fails.
+
+**Inputs**
+
+| Name              | Type   | Required | Description                                 |
+|-------------------|--------|----------|---------------------------------------------|
+| `target-environment` | string | no (default `dev`) | Target environment: `dev` or `prod`. |
+| `release-channel` | string | yes      | Current channel. `dev` deploy uses `develop`. |
+| `image-tag`       | string | yes      | Docker image tag to deploy.                 |
+| `package-name`    | string | yes      | GHCR package name (e.g. `wendara-backend`). |
+
+**Secrets**
+
+| Secret                | Purpose                      |
+|-----------------------|------------------------------|
+| `DEV_SSH_PRIVATE_KEY` | SSH private key for droplet. |
+| `PROD_SSH_PRIVATE_KEY` | SSH private key for prod host. |
+| `GHCR_TOKEN`          | Token used by remote deploy for GHCR login. |
+
+**Environment variables (`environment: dev`)**
+
+| Variable        | Purpose                     |
+|-----------------|-----------------------------|
+| `DEV_SSH_HOST`  | Droplet host/IP.            |
+| `DEV_SSH_USER`  | SSH user for deploy.        |
+| `PROD_SSH_HOST` | PROD host/IP.               |
+| `PROD_SSH_USER` | SSH user for prod deploy.   |
+| `GHCR_USERNAME` | GHCR username for login.    |
+
+**Diagnostics produced by the workflow**
+
+- Console output of the remote deploy script is streamed in real time.
+- A log artifact is uploaded as `backend-deploy-log-<environment>-<tag>`.
+- `GITHUB_STEP_SUMMARY` includes:
+  - remote exit code,
+  - rollback detection (`[ROLLBACK]` marker),
+  - success marker detection (`Deploy successful:` marker).
+
+**Example caller orchestration (recommended)**
+
+Use two independent jobs in `wendara-backend/.github/workflows/ci.yml`: one for CI/release and one for deploy.
+
+```yaml
+jobs:
+  backend_ci:
+    uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-java-backend.yml@main
+    with:
+      release-channel: ${{ github.ref_name }}
+      package-name: wendara-backend
+    secrets:
+      GPR_USER: ${{ secrets.GPR_USER }}
+      GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+
+  deploy_dev:
+    needs: backend_ci
+    if: >
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/develop' &&
+      needs.backend_ci.outputs.published == 'true'
+    uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-backend-deploy.yml@main
+    with:
+      target-environment: dev
+      release-channel: develop
+      image-tag: ${{ needs.backend_ci.outputs.released_version }}
+      package-name: wendara-backend
+    secrets:
+      DEV_SSH_PRIVATE_KEY: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
+      PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
 ```
 
 ---
