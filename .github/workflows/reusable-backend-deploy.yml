@@ -115,6 +115,10 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+          if [[ -z "${SSH_PRIVATE_KEY:-}" ]]; then
+            echo "❌ DEV_SSH_PRIVATE_KEY is empty or not available in the selected environment context."
+            exit 1
+          fi
           eval "$(ssh-agent -s)"
 
           KEY_FILE="$(mktemp)"
@@ -128,6 +132,7 @@ jobs:
 
           if ! ssh-keygen -y -f "${KEY_FILE}" >/dev/null 2>&1; then
             echo "❌ Invalid DEV_SSH_PRIVATE_KEY format (or encrypted with passphrase)."
+            echo "Hint: expected a private key that starts with '-----BEGIN' and ends with 'PRIVATE KEY-----'."
             echo "Expected an unencrypted private key in OpenSSH/PEM format."
             exit 1
           fi
@@ -141,6 +146,10 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+          if [[ -z "${SSH_PRIVATE_KEY:-}" ]]; then
+            echo "❌ PROD_SSH_PRIVATE_KEY is empty or not available in the selected environment context."
+            exit 1
+          fi
           eval "$(ssh-agent -s)"
 
           KEY_FILE="$(mktemp)"
@@ -154,6 +163,7 @@ jobs:
 
           if ! ssh-keygen -y -f "${KEY_FILE}" >/dev/null 2>&1; then
             echo "❌ Invalid PROD_SSH_PRIVATE_KEY format (or encrypted with passphrase)."
+            echo "Hint: expected a private key that starts with '-----BEGIN' and ends with 'PRIVATE KEY-----'."
             echo "Expected an unencrypted private key in OpenSSH/PEM format."
             exit 1
           fi
