@@ -21,10 +21,6 @@ on:
         required: true
         type: string
     secrets:
-      DEV_SSH_PRIVATE_KEY:
-        required: false
-      PROD_SSH_PRIVATE_KEY:
-        required: false
       GHCR_TOKEN:
         required: true
 
