@@ -111,15 +111,55 @@ jobs:
 
       - name: Start ssh-agent and load DEV key
         if: ${{ inputs.target-environment == 'dev' }}
-        uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          eval "$(ssh-agent -s)"
+
+          KEY_FILE="$(mktemp)"
+          if [[ "${SSH_PRIVATE_KEY}" == *"\\n"* ]]; then
+            printf '%b' "${SSH_PRIVATE_KEY}" > "${KEY_FILE}"
+          else
+            printf '%s' "${SSH_PRIVATE_KEY}" > "${KEY_FILE}"
+          fi
+          sed -i.bak 's/\r$//' "${KEY_FILE}" && rm -f "${KEY_FILE}.bak"
+          chmod 600 "${KEY_FILE}"
+
+          if ! ssh-keygen -y -f "${KEY_FILE}" >/dev/null 2>&1; then
+            echo "❌ Invalid DEV_SSH_PRIVATE_KEY format (or encrypted with passphrase)."
+            echo "Expected an unencrypted private key in OpenSSH/PEM format."
+            exit 1
+          fi
+
+          ssh-add "${KEY_FILE}"
 
       - name: Start ssh-agent and load PROD key
         if: ${{ inputs.target-environment == 'prod' }}
-        uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          eval "$(ssh-agent -s)"
+
+          KEY_FILE="$(mktemp)"
+          if [[ "${SSH_PRIVATE_KEY}" == *"\\n"* ]]; then
+            printf '%b' "${SSH_PRIVATE_KEY}" > "${KEY_FILE}"
+          else
+            printf '%s' "${SSH_PRIVATE_KEY}" > "${KEY_FILE}"
+          fi
+          sed -i.bak 's/\r$//' "${KEY_FILE}" && rm -f "${KEY_FILE}.bak"
+          chmod 600 "${KEY_FILE}"
+
+          if ! ssh-keygen -y -f "${KEY_FILE}" >/dev/null 2>&1; then
+            echo "❌ Invalid PROD_SSH_PRIVATE_KEY format (or encrypted with passphrase)."
+            echo "Expected an unencrypted private key in OpenSSH/PEM format."
+            exit 1
+          fi
+
+          ssh-add "${KEY_FILE}"
 
       - name: Trust remote host key
         shell: bash
