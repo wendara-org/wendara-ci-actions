@@ -85,10 +85,12 @@ jobs:
           if [[ "${TARGET}" == "dev" ]]; then
             echo "ssh_host=${DEV_SSH_HOST}" >> "$GITHUB_OUTPUT"
             echo "ssh_user=${DEV_SSH_USER}" >> "$GITHUB_OUTPUT"
+            echo "deploy_base_dir=/opt/wendara/dev" >> "$GITHUB_OUTPUT"
             echo "deploy_script=/opt/wendara/dev/scripts/deploy-dev.sh" >> "$GITHUB_OUTPUT"
           else
             echo "ssh_host=${PROD_SSH_HOST}" >> "$GITHUB_OUTPUT"
             echo "ssh_user=${PROD_SSH_USER}" >> "$GITHUB_OUTPUT"
+            echo "deploy_base_dir=/opt/wendara/prod" >> "$GITHUB_OUTPUT"
             echo "deploy_script=/opt/wendara/prod/scripts/deploy-prod.sh" >> "$GITHUB_OUTPUT"
           fi
 
@@ -96,7 +98,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for key in SSH_HOST SSH_USER GHCR_USERNAME DEPLOY_SCRIPT; do
+          for key in SSH_HOST SSH_USER GHCR_USERNAME DEPLOY_SCRIPT DEPLOY_BASE_DIR; do
             if [[ -z "${!key:-}" ]]; then
               echo "❌ Missing environment variable: ${key}"
               exit 1
@@ -106,6 +108,7 @@ jobs:
         env:
           SSH_HOST: ${{ steps.cfg.outputs.ssh_host }}
           SSH_USER: ${{ steps.cfg.outputs.ssh_user }}
+          DEPLOY_BASE_DIR: ${{ steps.cfg.outputs.deploy_base_dir }}
           DEPLOY_SCRIPT: ${{ steps.cfg.outputs.deploy_script }}
           GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
 
@@ -185,6 +188,7 @@ jobs:
         env:
           SSH_HOST: ${{ steps.cfg.outputs.ssh_host }}
           SSH_USER: ${{ steps.cfg.outputs.ssh_user }}
+          DEPLOY_BASE_DIR: ${{ steps.cfg.outputs.deploy_base_dir }}
           DEPLOY_SCRIPT: ${{ steps.cfg.outputs.deploy_script }}
           GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
@@ -199,7 +203,7 @@ jobs:
           set +e
           # Run deploy script remotely and keep full output for diagnostics.
           ssh "${SSH_USER}@${SSH_HOST}" \
-            "GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' '${DEPLOY_SCRIPT}' '${IMAGE_TAG}'" \
+            "cd '${DEPLOY_BASE_DIR}' && GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' '${DEPLOY_SCRIPT}' '${IMAGE_TAG}'" \
             2>&1 | tee "${LOG_FILE}"
           DEPLOY_EXIT_CODE=${PIPESTATUS[0]}
           set -e
