@@ -20,6 +20,14 @@ on:
         description: "GHCR package/image name (e.g. wendara-backend)"
         required: true
         type: string
+      infisical-api-url:
+        description: "Infisical API URL for the target environment"
+        required: true
+        type: string
+      infisical-universal-auth-client-id:
+        description: "Infisical Universal Auth client ID for the target environment"
+        required: true
+        type: string
       infisical-project-id:
         description: "Infisical project ID for the target environment"
         required: true
@@ -52,6 +60,14 @@ on:
         type: string
       package-name:
         description: "GHCR package/image name (e.g. wendara-backend)"
+        required: true
+        type: string
+      infisical-api-url:
+        description: "Infisical API URL for the target environment"
+        required: true
+        type: string
+      infisical-universal-auth-client-id:
+        description: "Infisical Universal Auth client ID for the target environment"
         required: true
         type: string
       infisical-project-id:
@@ -222,9 +238,9 @@ jobs:
           SSH_KEY_FILE: ${{ steps.load_dev_key.outputs.key_file || steps.load_prod_key.outputs.key_file }}
           GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          INFISICAL_API_URL: ${{ vars.INFISICAL_API_URL }}
+          INFISICAL_API_URL: ${{ inputs.infisical-api-url }}
           INFISICAL_PROJECT_ID: ${{ inputs.infisical-project-id }}
-          INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: ${{ vars.INFISICAL_UNIVERSAL_AUTH_CLIENT_ID }}
+          INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: ${{ inputs.infisical-universal-auth-client-id }}
           INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: ${{ secrets.INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET }}
           IMAGE_TAG: ${{ inputs.image-tag }}
           PACKAGE_NAME: ${{ inputs.package-name }}
