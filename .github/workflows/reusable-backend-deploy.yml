@@ -27,6 +27,8 @@ on:
         required: false
       GHCR_TOKEN:
         required: true
+      INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET:
+        required: true
 
   workflow_dispatch:
     inputs:
@@ -212,6 +214,9 @@ jobs:
           SSH_KEY_FILE: ${{ steps.load_dev_key.outputs.key_file || steps.load_prod_key.outputs.key_file }}
           GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          INFISICAL_API_URL: ${{ vars.INFISICAL_API_URL }}
+          INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: ${{ vars.INFISICAL_UNIVERSAL_AUTH_CLIENT_ID }}
+          INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: ${{ secrets.INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET }}
           IMAGE_TAG: ${{ inputs.image-tag }}
           PACKAGE_NAME: ${{ inputs.package-name }}
         run: |
@@ -223,7 +228,7 @@ jobs:
           set +e
           # Run deploy script remotely and keep full output for diagnostics.
           ssh -i "${SSH_KEY_FILE}" -o IdentitiesOnly=yes "${SSH_USER}@${SSH_HOST}" \
-            "cd '${DEPLOY_BASE_DIR}' && GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' '${DEPLOY_SCRIPT}' '${IMAGE_TAG}'" \
+            "cd '${DEPLOY_BASE_DIR}' && GHCR_USERNAME='${GHCR_USERNAME}' GHCR_TOKEN='${GHCR_TOKEN}' INFISICAL_API_URL='${INFISICAL_API_URL}' INFISICAL_UNIVERSAL_AUTH_CLIENT_ID='${INFISICAL_UNIVERSAL_AUTH_CLIENT_ID}' INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET='${INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET}' '${DEPLOY_SCRIPT}' '${IMAGE_TAG}'" \
             2>&1 | tee "${LOG_FILE}"
           DEPLOY_EXIT_CODE=${PIPESTATUS[0]}
           set -e
