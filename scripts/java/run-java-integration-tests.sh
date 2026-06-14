@@ -4,7 +4,7 @@ set -euo pipefail
 echo "▶ Running Java integration tests..."
 
 # Check if there are any *TestIT.java files
-if ! find . -type f -name "*TestIT.java" | grep -q .; then
+if ! find . -type f -name "*TestIT.java" -print -quit | grep -q .; then
   echo "⚠️ No integration tests found. Skipping."
   exit 0
 fi
