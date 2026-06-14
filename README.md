@@ -237,7 +237,7 @@ pipeline summary.
 
 **What it does**
 
-1. Runs Java quality gates (static): `checkstyle`, `pmd` and `spotbugs`
+1. Runs Java quality gates (static): `checkstyle`, `pmd` and `spotbugs`.
 2. Executes **unit tests** + **coverage** and generates **Jacoco Coverage Report**.
 3. **integration tests** brings up Docker Compose, runs ITs, and tears down.
 4. Uses **semantic-release** to resolve the version and auto-tag commits.
@@ -247,6 +247,8 @@ pipeline summary.
 8. Runs an **OWASP Dependency Check** on `main` after release.
 9. Cleans up old GHCR **snapshot** images to save space.
 10. Prints a **pipeline summary** at the end of the workflow (only on release builds).
+
+The quality gate job is now kept separate from unit and integration tests, so the three can run in parallel and only join again at `release`.
 
 **Inputs**
 

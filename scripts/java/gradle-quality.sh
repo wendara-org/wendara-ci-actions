@@ -15,10 +15,9 @@ if [ -z "${FIRST_JAVA_FILE}" ]; then
   echo "⚠️ No Java source files found under 'code/'. Skipping quality checks."
   exit 0
 fi
-# Build (without tests) + static analysis.
-echo "Running assemble + Checkstyle, PMD and SpotBugs..."
+# Static analysis only. Unit tests and coverage run in their own jobs.
+echo "Running Checkstyle, PMD and SpotBugs..."
 ./gradlew \
-  assemble \
   checkstyleMain checkstyleTest \
   pmdMain pmdTest \
   spotbugsMain spotbugsTest \
