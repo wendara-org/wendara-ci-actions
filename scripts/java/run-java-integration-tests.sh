@@ -9,11 +9,16 @@ if ! find . -type f -name "*TestIT.java" -print -quit | grep -q .; then
   exit 0
 fi
 
-${GRADLEW:-./gradlew} \
+if ! ${GRADLEW:-./gradlew} \
   integrationTest \
   --tests '*TestIT' \
   --build-cache \
   --parallel \
-  --configuration-cache
+  --stacktrace \
+  --configuration-cache; then
+  echo "❌ Integration tests failed. Printing a short failure summary:"
+  "$(dirname "$0")/summarize-java-test-failures.sh" integrationTest
+  exit 1
+fi
 
 echo "✅ Integration tests completed."

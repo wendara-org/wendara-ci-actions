@@ -68,7 +68,8 @@ wendara-ci-actions/
 │  │  ├─ gradle-quality.sh                 # checkstyle, pmd, spotbugs (no tests here)
 │  │  ├─ run-java-unit-tests.sh            # Run unit tests + coverage (Jacoco)
 │  │  ├─ start-java-integration-env.sh     # Start Docker Compose (Mongo pinned + healthcheck)
-│  │  ├─ run-java-integration-tests.sh     # Run integration tests
+│  │  ├─ run-java-integration-tests.sh     # Run integration tests and summarize failures
+│  │  ├─ summarize-java-test-failures.sh   # Print failed JUnit test details from XML reports
 │  │  └─ stop-java-integration-env.sh      # Stop Docker Compose
 │  ├─ web/
 │  │  ├─ build-web-dist.sh                 # Build web dist output
@@ -730,7 +731,8 @@ All helper scripts are located under `scripts/` and grouped by domain:
 | `gradle-quality.sh`             | Runs `checkstyle`, `pmd` and `spotbugs`                    |
 | `run-java-unit-tests.sh`        | Executes unit tests via Gradle.                            |
 | `start-java-integration-env.sh` | Starts integration test environment (e.g. Docker Compose). |
-| `run-java-integration-tests.sh` | Runs integration tests.                                    |
+| `run-java-integration-tests.sh` | Runs integration tests and prints a short failure summary. |
+| `summarize-java-test-failures.sh` | Extracts readable failure details from JUnit XML reports.  |
 | `stop-java-integration-env.sh`  | Tears down integration test environment.                   |
 
 ### Utilities (`scripts/`)

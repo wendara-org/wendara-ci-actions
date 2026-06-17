@@ -282,6 +282,16 @@ jobs:
         working-directory: code
         run: ../.wendara-ci-actions/scripts/java/run-java-integration-tests.sh
 
+      - name: Upload integration test reports
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: integration-test-reports
+          path: |
+            code/**/build/reports/tests/integrationTest
+            code/**/build/test-results/integrationTest
+          if-no-files-found: ignore
+
       - name: Stop integration environment
         if: always()
         working-directory: code
