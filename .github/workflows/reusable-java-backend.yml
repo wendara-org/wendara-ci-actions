@@ -216,7 +216,9 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: jacoco-report
-          path: code/**/build/reports/jacoco/test/html
+          path: |
+            code/build/reports/jacoco/test/html/**
+            code/*/build/reports/jacoco/test/html/**
 
   integration-tests:
     name: Integration tests
