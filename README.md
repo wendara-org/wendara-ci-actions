@@ -30,6 +30,7 @@ Reusable GitHub Actions **workflows** and **helper scripts** for Wendara’s eng
 - [Post‑release Sync (main → develop)](#postrelease-sync-main--develop)
 - [Redoc Previews](#redoc-previews)
 - [Using These Workflows Across Repos](#using-these-workflows-across-repos)
+- [AI-assisted development](#ai-assisted-development)
 - [Requirements](#requirements)
 - [Troubleshooting](#troubleshooting)
 
@@ -860,6 +861,102 @@ reviewers can inspect docs without running anything locally.
 | `wendara-mobile`          | `mobile-build.yml`           |
 
 Use `@main` while iterating, and switch to tag or SHA for production stability.
+
+---
+
+## AI-assisted development
+
+This repository includes dedicated AI collaboration guardrails to keep AI-assisted changes aligned with reusable workflow
+contracts, security, permissions, secrets, release behavior, and consumer compatibility.
+
+The main entry point is [AI Engineering Guidelines](AI_ENGINEERING_GUIDELINES.md). The default rule is:
+
+1. Load [Always-On AI Rules](ai/00_ALWAYS.md) first.
+2. Load only the task-specific rule files needed for the current work.
+3. Before changing a reusable contract, inspect the workflow, README section, and at least one consumer example.
+
+Do not load the full [`/ai`](ai/) folder by default. The rules are split to reduce token usage and keep the most
+important CI/CD constraints visible to the AI assistant.
+
+### How to use with Codex
+
+Codex reads the root [AGENTS.md](AGENTS.md) as repository guidance. For important work, still be explicit:
+
+```text
+Read AI_ENGINEERING_GUIDELINES.md and ai/00_ALWAYS.md first. Then implement this change following only the task-specific Wendara CI rules you need.
+```
+
+For workflow contract changes:
+
+```text
+Read ai/00_ALWAYS.md, ai/02_WORKFLOW_RULES.md, and ai/04_RELEASE_AND_CONSUMER_RULES.md first. Preserve caller compatibility unless this task explicitly defines a migration.
+```
+
+For larger work, use the lightweight flow:
+
+- Explore in the current chat: ask Codex to investigate without modifying files.
+- Plan in the current chat: ask Codex for affected workflows/scripts, contracts, consumers, permissions, secrets, docs,
+  and validation.
+- Code in a fresh chat when useful: paste the agreed plan and ask Codex to read `ai/00_ALWAYS.md` plus only relevant
+  rules.
+- Code review locally: ask Codex to use `ai/prompts/code-review.md` and review the current diff before opening or
+  updating a PR.
+
+Reusable prompt templates live in [ai/prompts](ai/prompts):
+
+- [Explore](ai/prompts/explore.md)
+- [Plan](ai/prompts/plan.md)
+- [Code](ai/prompts/code.md)
+- [Code Review](ai/prompts/code-review.md)
+
+These files are versioned prompt templates, not universal slash commands. Whether `/explore`, `/plan`, `/code`, or
+`/code-review` exists depends on the tool you are using.
+
+To run a local review in Codex:
+
+```text
+Use ai/prompts/code-review.md as the working mode. Review my current local diff against Wendara CI Actions rules and report only actionable findings.
+```
+
+With ClickUp context:
+
+```text
+Use ai/prompts/code-review.md as the working mode. Review my current local diff against Wendara CI Actions rules and this ClickUp task: [task link/id or pasted acceptance criteria]. The task is [up-to-date | possibly stale].
+```
+
+If there is no task, say it explicitly:
+
+```text
+Use ai/prompts/code-review.md as the working mode. Review my current local diff against Wendara CI Actions rules. No task exists for this change.
+```
+
+### How to use with GitHub Copilot
+
+GitHub Copilot should pick up repository instructions from:
+
+- [.github/copilot-instructions.md](.github/copilot-instructions.md)
+- [.github/instructions/wendara-ci-workflows.instructions.md](.github/instructions/wendara-ci-workflows.instructions.md)
+- [.github/instructions/wendara-ci-scripts.instructions.md](.github/instructions/wendara-ci-scripts.instructions.md)
+
+Even with those files present, be explicit in important chats:
+
+```text
+Follow the repository AI instructions. Preserve workflow_call compatibility, least-privilege permissions, and secret-safe logging.
+```
+
+For complex tasks, paste or reference the relevant prompt from `ai/prompts/`.
+
+### How to use with Claude
+
+Claude should use [CLAUDE.md](CLAUDE.md) as its short entry point, then load
+[AI_ENGINEERING_GUIDELINES.md](AI_ENGINEERING_GUIDELINES.md), [ai/00_ALWAYS.md](ai/00_ALWAYS.md), and only the specific
+rules needed for the task.
+
+For local review with Claude:
+
+```text
+Use ai/prompts/code-review.md. Review the current changes against Wendara CI workflow contracts, permissions, secrets, release, deploy, publish, script, documentation, and validation rules.
+```
 
 ---
 
