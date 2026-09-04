@@ -482,7 +482,7 @@ jobs:
 ### Node Mobile Apps (`reusable-node-mobile.yml`)
 
 Reusable CI pipeline for **React Native** and other Node.js-based mobile apps. Supports linting, type checking,
-unit/integration tests, semantic release, snapshot cleanup, and main→develop sync PRs.
+the project-defined test suite, semantic release, snapshot cleanup, and main→develop sync PRs.
 
 **What it does**
 
@@ -490,8 +490,11 @@ unit/integration tests, semantic release, snapshot cleanup, and main→develop s
 
 - `npm run lint`
 - `npm run typecheck`
-- `npm test` (unit tests)
-- (Optional) `npm run test:integration` if script exists
+- `npm test` (the complete Jest suite defined by the consumer)
+
+The mobile workflow intentionally uses one test job. The consumer owns the composition of `npm test`, which may include
+unit, component, screen, and mocked feature tests. Suites that require a different runtime, such as device-based E2E
+tests, should use a dedicated workflow instead of an optional no-op job.
 
 2. (Optional) Runs semantic-release for versioning and tagging on `develop`/`main`.
 3. Cleans up old prereleases on `develop` (configurable count).
@@ -516,15 +519,19 @@ unit/integration tests, semantic release, snapshot cleanup, and main→develop s
 
 **Jobs**
 
-| Job                 | Description                                                  |
-|---------------------|--------------------------------------------------------------|
-| `lint`              | Runs `npm run lint`.                                         |
-| `typecheck`         | Runs `npm run typecheck`.                                    |
-| `unit-tests`        | Runs `npm test`.                                             |
-| `integration-tests` | Runs `npm run test:integration` if script exists.            |
-| `release`           | Runs semantic-release for versioning/tags (on develop/main). |
-| `snapshot-cleanup`  | Cleans up old prereleases (develop only).                    |
-| `sync-pr`           | Creates PR to sync main → develop after release (main only). |
+| Job                | Description                                                                                   |
+|--------------------|-----------------------------------------------------------------------------------------------|
+| `lint`             | Runs `npm run lint`.                                                                          |
+| `typecheck`        | Runs `npm run typecheck`.                                                                     |
+| `unit-tests`       | Runs the complete `npm test` suite. The legacy job id is retained for caller compatibility.  |
+| `release`          | Runs semantic-release for versioning/tags (on develop/main).                                  |
+| `snapshot-cleanup` | Cleans up old prereleases (develop only).                                                     |
+| `sync-pr`          | Creates PR to sync main → develop after release (main only).                                  |
+
+**Migration note:** the visible required-check context changes from `<caller job> / Unit tests` to
+`<caller job> / Tests`, and `<caller job> / Integration tests (optional)` is removed. Update repository rulesets or
+branch protection required checks when adopting this workflow revision. The internal `unit-tests` job id remains stable
+for workflow dependencies.
 
 **Example usage** (`wendara-mobile/.github/workflows/ci.yml`):
 
@@ -555,7 +562,6 @@ jobs:
       node-version: "24"
       working-directory: "."
       release-channel: ${{ github.event_name == 'push' && github.ref_name || '' }}
-      run-build: false
     secrets:
       GPR_USER: ${{ secrets.GPR_USER }}
       GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
