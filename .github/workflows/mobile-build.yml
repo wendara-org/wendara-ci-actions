@@ -33,7 +33,7 @@ env:
 jobs:
   build:
     name: Build (${{ inputs.platform }}) · ${{ inputs.tag }} · ${{ inputs.eas-profile }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository at tag

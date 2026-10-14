@@ -53,7 +53,7 @@ env:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -101,7 +101,7 @@ jobs:
 
   typecheck:
     name: Typecheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -150,7 +150,7 @@ jobs:
   unit-tests:
     # Keep the job id stable for existing workflow dependencies.
     name: Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -198,7 +198,7 @@ jobs:
 
   release:
     name: Semantic release (tags/releases)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [lint, typecheck, unit-tests]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && inputs.release-channel != ''
     defaults:
@@ -301,7 +301,7 @@ jobs:
 
   snapshot-cleanup:
     name: Snapshot cleanup (develop prereleases)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: release
     if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'develop' }}
     steps:
@@ -344,7 +344,7 @@ jobs:
 
   sync-pr:
     name: Sync PR main → develop
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: release
     if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'main' }}
     permissions:

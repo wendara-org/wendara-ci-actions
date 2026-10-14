@@ -86,7 +86,7 @@ permissions:
 jobs:
   manual_release:
     name: Manual release (main-only, id-based)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       ROOT_META: "metadata.yml"
       API_ID: "${{ inputs.api_id }}"

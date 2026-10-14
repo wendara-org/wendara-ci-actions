@@ -104,7 +104,7 @@ jobs:
     # Detect which OpenAPI specs changed in this push/PR.
     # Output is a space-separated list of: apis/*/*/*/openapi.yaml
     name: Detect changed API specs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     outputs:
@@ -194,7 +194,7 @@ jobs:
   validate:
     # Lint OpenAPI specs with Redocly CLI and enforce Conventional Commits (PR only).
     name: Lint + Conventional Commits
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [ detect ]
     if: needs.detect.outputs.any_changed == 'true'
     steps:
@@ -232,7 +232,7 @@ jobs:
   guard:
     # Semantic diff guard (oasdiff): validates semantic version bump vs API diff.
     name: Semantic diff guard (oasdiff)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [ detect ]
     if: needs.detect.outputs.any_changed == 'true'
     # Explicit permissions for reviewdog annotations inside reusable workflow.
@@ -334,7 +334,7 @@ jobs:
   redoc:
     # Optional Redoc HTML previews for changed specs (reviewer-friendly artifacts).
     name: Build Redoc previews
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [ detect ]
     if: needs.detect.outputs.any_changed == 'true' && inputs.run_redoc
     steps:
@@ -386,7 +386,7 @@ jobs:
     # Publishes changed specs as Maven artifacts (zip) via consumer repo Gradle build.
     # We pre-filter (best-effort) to avoid GH Packages 409 conflicts (already published).
     name: Publish contracts to GitHub Packages (maven)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [ detect, validate, guard ]
     if: needs.detect.outputs.any_changed == 'true' && inputs.publish_enabled
     outputs:
@@ -549,7 +549,7 @@ jobs:
     #  - Unique version on SNAPSHOT (no collisions)
     #  - Skipping if version already exists (immutability)
     name: Publish contracts to GitHub Packages (npm)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [ detect, validate, guard ]
     if: needs.detect.outputs.any_changed == 'true' && inputs.publish_enabled
     outputs:
@@ -692,7 +692,7 @@ jobs:
     # - released: only true on main AND something was published (maven OR npm)
     # - release_channel: derived from branch name
     name: Release gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [ publish_maven, publish_npm ]
     if: always()
     outputs:
@@ -728,7 +728,7 @@ jobs:
     # - Merge main using "ours" strategy to advance history without changing content.
     # - If tree changed, create a PR; otherwise push directly to develop.
     name: Sync main → develop
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [ release_gate ]
     if: needs.release_gate.outputs.released == 'true'
     permissions:

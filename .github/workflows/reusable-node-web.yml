@@ -70,7 +70,7 @@ concurrency:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -107,7 +107,7 @@ jobs:
 
   unit-tests:
     name: Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -144,7 +144,7 @@ jobs:
 
   typecheck:
     name: Typecheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -181,7 +181,7 @@ jobs:
 
   compile-check:
     name: Compile validation (no release artifact)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -222,7 +222,7 @@ jobs:
     permissions:
       contents: write
       packages: read
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [release]
     if: ${{ success() && needs.release.outputs.published == 'true' }}
     defaults:
@@ -338,7 +338,7 @@ jobs:
 
   summary:
     name: Summary
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build]
     if: always()
     steps:
@@ -354,7 +354,7 @@ jobs:
       packages: read
       pull-requests: write
       issues: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [lint, typecheck, unit-tests, compile-check]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main') && inputs.release-channel != ''
     defaults:
@@ -456,7 +456,7 @@ jobs:
     name: Snapshot cleanup (develop prereleases)
     permissions:
       contents: write
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [release, build]
     if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'develop' }}
     steps:
@@ -491,7 +491,7 @@ jobs:
 
   sync-pr:
     name: Sync PR main → develop
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [release, build]
     if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'main' }}
     permissions:

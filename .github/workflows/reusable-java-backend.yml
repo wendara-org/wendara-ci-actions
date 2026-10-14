@@ -95,7 +95,7 @@ jobs:
 
   quality-checks:
     name: Quality checks (Checkstyle/PMD/SpotBugs)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout backend
         uses: actions/checkout@v6
@@ -152,7 +152,7 @@ jobs:
 
   unit-tests:
     name: Unit tests + JaCoCo
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout backend
         uses: actions/checkout@v6
@@ -222,7 +222,7 @@ jobs:
 
   integration-tests:
     name: Integration tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout backend
         uses: actions/checkout@v6
@@ -303,7 +303,7 @@ jobs:
 
   release:
     name: Semantic release (tags/releases)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [ quality-checks, unit-tests, integration-tests ]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
     outputs:
@@ -407,7 +407,7 @@ jobs:
 
   docker:
     name: Build & push Docker image (Jib → GHCR)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: release
     if: ${{ success() && needs.release.outputs.published == 'true' }}
     steps:
@@ -482,7 +482,7 @@ jobs:
 
   clean-snapshots:
     name: Clean old GHCR snapshots
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: release
     if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'develop' }}
     steps:
@@ -523,7 +523,7 @@ jobs:
 
   sync-pr:
     name: Sync PR main → develop
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: release
     if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'main' }}
     permissions:
@@ -641,7 +641,7 @@ jobs:
 
   owasp-check:
     name: OWASP Dependency Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: release
     if: ${{ success() && needs.release.outputs.published == 'true' && inputs.release-channel == 'main' }}
     continue-on-error: true
@@ -672,7 +672,7 @@ jobs:
 
   summary:
     name: Pipeline Summary
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [ docker, clean-snapshots, sync-pr, owasp-check ]
     if: always()
     steps:

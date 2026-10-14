@@ -1032,8 +1032,12 @@ Use ai/prompts/code-review.md. Review the current changes against Wendara CI wor
 
 - **Permissions**: `GITHUB_TOKEN` (or PAT) with `packages:write` to publish artifacts/images; `pull-requests: write` for
   sync PR.
-- **Runners**: Linux runners with Docker available (used by `oasdiff` container). Java and Node are set up by the
-  reusable workflow.
+- **Runners**: All workflows pin GitHub-hosted Linux jobs to `ubuntu-24.04` to avoid automatic OS migrations
+  through `ubuntu-latest`, including the [Ubuntu 26.04 rollout beginning October 19, 2026](https://github.com/actions/runner-images/issues/14748).
+  This pins the OS release, not the runner image or its preinstalled tool versions. Java and Node are set up by the
+  reusable workflow; Docker is required for Compose, Jib, and OWASP. Validate Ubuntu 26.04 before updating the runner
+  labels. Consumers do not need to change workflow inputs or secrets; callers pinned to a tag or commit must adopt a
+  revision containing this change. Jobs defined in consumer repositories must pin their own runner labels separately.
 
 - Repos must follow folder conventions per type (API, backend, frontend)
 - `GITHUB_TOKEN` must have `packages:write` and `pull-requests: write`

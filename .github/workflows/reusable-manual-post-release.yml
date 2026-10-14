@@ -87,7 +87,7 @@ jobs:
 
   safety-gates:
     name: Safety Gates
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.ver.outputs.version }}  # Expose VERSION to downstream jobs
     steps:
@@ -136,7 +136,7 @@ jobs:
 
   docker:
     name: Build & Push Docker Image (Jib → GHCR)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: safety-gates
     env:
       VERSION: ${{ needs.safety-gates.outputs.version }}
@@ -199,7 +199,7 @@ jobs:
 
   clean-snapshots:
     name: Clean old GHCR snapshots (develop only)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: docker
     if: ${{ inputs.channel == 'develop' }}
     env:
@@ -237,7 +237,7 @@ jobs:
 
   sync-pr:
     name: Sync main → develop (main only)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: docker
     if: ${{ inputs.channel == 'main' }}
     permissions:
@@ -298,7 +298,7 @@ jobs:
 
   summary:
     name: Post-release Summary
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [ docker, clean-snapshots, sync-pr ]
     if: always()
     steps:
