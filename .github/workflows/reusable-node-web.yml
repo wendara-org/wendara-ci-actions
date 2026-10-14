@@ -58,6 +58,8 @@ permissions:
 
 env:
   CI: true
+  # CI jobs own validation; local hooks must not run on bot release/sync commits.
+  HUSKY: "0"
   GITHUB_ACTOR: ${{ github.actor }}
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

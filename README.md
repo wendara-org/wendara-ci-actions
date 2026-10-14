@@ -407,6 +407,11 @@ Reusable CI for Node web applications. Pull requests run lint, TypeScript checks
 and a compilation into a disposable runner directory. Validation does not package, upload, release, or deploy an
 application. A push to `develop` or `main` runs the same gates before semantic-release.
 
+The web workflow sets `HUSKY=0`, following [Husky's CI guidance](https://typicode.github.io/husky/how-to.html#ci-server-and-docker).
+This disables local Git hook installation/execution on runners, including bot release and sync commits. The explicit
+lint, typecheck, test, and compile jobs still gate release. A local pre-commit formatter must not inspect the checked-out
+helper repository or block generated release metadata in CI. Mobile and other reusable workflows are unchanged.
+
 When semantic-release publishes, `build` checks out the exact release tag, validates the version, builds the public
 files, and creates `dist-<version>.tgz` with its SHA-256 checksum. Packages reject source maps, source/test directories,
 credentials, and symlinks. Normalized tar timestamps keep repeat packaging reproducible. The package is uploaded as
