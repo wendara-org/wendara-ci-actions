@@ -416,6 +416,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           SYNC_BRANCH="${{ steps.merge.outputs.branch }}"
           git push -f origin "$SYNC_BRANCH"
 
@@ -424,10 +425,10 @@ jobs:
           if [ -n "$existing_pr" ]; then
             echo "✅ PR #$existing_pr already exists"
           else
-            gh pr create \
-              --base develop \
-              --head "$SYNC_BRANCH" \
-              --title "chore: sync main → develop after v${{ steps.version.outputs.value }}" \
+            pr_args=(
+              --base develop
+              --head "$SYNC_BRANCH"
+              --title "chore: sync main → develop after v${{ steps.version.outputs.value }}"
               --body "$(cat <<EOF
           ## 🔄 Sync after release v${{ steps.version.outputs.value }}
 
@@ -439,9 +440,20 @@ jobs:
           **Source:** \`main\`
           **Target:** \`develop\`
           EOF
-              )" \
-              --label chore \
-              --label sync
+              )"
+            )
+            if available_labels=$(gh label list --limit 1000 --json name --jq '.[].name'); then
+              for label in chore sync; do
+                if grep -Fxq "$label" <<< "$available_labels"; then
+                  pr_args+=(--label "$label")
+                else
+                  echo "::warning::Optional sync label '$label' is missing; creating the PR without it."
+                fi
+              done
+            else
+              echo "::warning::Could not read repository labels; creating the sync PR without labels."
+            fi
+            gh pr create "${pr_args[@]}"
           fi
 
       - name: Summary

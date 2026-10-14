@@ -772,16 +772,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PACKAGES_TOKEN || github.token }}
         run: |
+          set -euo pipefail
           git push -f origin chore/sync-main-into-develop
 
           existing_pr=$(gh pr list --head chore/sync-main-into-develop --base develop --json number --jq '.[0].number')
           if [ -n "$existing_pr" ]; then
             echo "✅ PR #$existing_pr already exists"
           else
-            gh pr create \
-              --base develop \
-              --head chore/sync-main-into-develop \
-              --title "chore(sync): merge main into develop" \
+            pr_args=(
+              --base develop
+              --head chore/sync-main-into-develop
+              --title "chore(sync): merge main into develop"
               --body "$(cat <<EOF
           ## 🔄 Sync main → develop
 
@@ -792,9 +793,20 @@ jobs:
           **Source:** \`main\`
           **Target:** \`develop\`
           EOF
-              )" \
-              --label chore \
-              --label sync
+              )"
+            )
+            if available_labels=$(gh label list --limit 1000 --json name --jq '.[].name'); then
+              for label in chore sync; do
+                if grep -Fxq "$label" <<< "$available_labels"; then
+                  pr_args+=(--label "$label")
+                else
+                  echo "::warning::Optional sync label '$label' is missing; creating the PR without it."
+                fi
+              done
+            else
+              echo "::warning::Could not read repository labels; creating the sync PR without labels."
+            fi
+            gh pr create "${pr_args[@]}"
           fi
 
       - name: Summary

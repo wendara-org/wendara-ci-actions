@@ -452,6 +452,11 @@ and the `unit-tests` id are preserved. Mobile, backend, and API-contract workflo
 The `sync-pr` job now merges real content rather than using the history-only `ours` strategy. Conflicts fail for
 human resolution. When content changes, the existing sync-PR flow applies; identical trees can still record history
 on develop. Verify branch-protection rules permit the existing history-only push behavior.
+Sync labels `chore` and `sync` are optional in the web, mobile, backend, and API-contract workflows. Existing labels
+are attached, but missing labels or an unavailable label listing do not prevent PR creation. No additional token permissions are required. If an older run fails
+with a missing-label error after publishing a stable package, create the missing repository labels and rerun failed
+jobs; do not recreate the release. Alternatively, publish that retained stable package through the consumer's manual
+deployment workflow after resolving the sync separately.
 
 Example caller:
 
@@ -902,12 +907,21 @@ env:
 
 ## Post‑release Sync (main → develop)
 
-After a successful **stable** publish on `main`, the API workflow opens an automated PR to sync `main` back into
-`develop` (branch alignment). If there are no changes, the step no‑ops.
+After a successful stable publish on `main`, sync follows each workflow's existing merge strategy. The web workflow
+merges actual main content and creates a PR for content changes; mobile, backend, and API contracts retain their
+history-only `ours` strategy and direct-push path. This label fix does not change those strategies.
 
-> Version `x.y.z` sync main → develop
+When a sync PR is needed, `chore` and `sync` are optional metadata in all four workflows. Existing labels are attached;
+missing labels or a failed label listing emit warnings and do not prevent PR creation. Existing PRs are reused.
+Actual PR creation/listing errors still fail the job. This does not enable Actions PR creation/approval in repository
+settings; that separate permission must be configured by the operator. No consumer input, secret, or permission
+contract changes are required. Consumers using `@main` receive the fix after it is published here.
 
-Branch auto-deleted after merge.
+Run the isolated regression scenarios (four workflows × seven cases) without real GitHub mutations:
+
+```bash
+python3 scripts/tests/sync_labels_test.py
+```
 
 ---
 
