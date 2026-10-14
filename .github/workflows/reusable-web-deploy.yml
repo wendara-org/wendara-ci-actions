@@ -1,0 +1,160 @@
+name: Reusable Static Web Deploy (Cloudflare)
+
+on:
+  workflow_call:
+    inputs:
+      target-environment:
+        description: "Deployment target (dev or prod), independent of GitHub Environments"
+        required: true
+        type: string
+      version:
+        description: "Exact released version without the v prefix"
+        required: true
+        type: string
+      legal-api-base-url:
+        description: "Public HTTPS API origin selected by the caller"
+        required: true
+        type: string
+      worker-name:
+        description: "Cloudflare Worker name selected by the caller"
+        required: true
+        type: string
+      hostname:
+        description: "Cloudflare custom hostname selected by the caller"
+        required: true
+        type: string
+      cloudflare-account-id:
+        description: "Cloudflare account ID selected by the caller"
+        required: true
+        type: string
+      artifact-name:
+        description: "Current-run dist artifact; empty downloads the package from its GitHub release"
+        required: false
+        default: ""
+        type: string
+
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        description: "Repository secret passed by the caller; never an environment secret"
+        required: true
+      CI_ACTIONS_READ_TOKEN:
+        description: "Optional read-only token if the shared helper repository is private"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-deploy-${{ github.repository }}-${{ inputs.target-environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy static web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate target and released version
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target-environment }}
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET" == "dev" || "$TARGET" == "prod" ]]
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          if [[ "$TARGET" == "prod" && "$VERSION" == *-* ]]; then
+            echo "Production requires a stable release version" >&2
+            exit 1
+          fi
+          if [[ "$TARGET" == "dev" && "$VERSION" != *-develop.* ]]; then
+            echo "DEV requires a develop prerelease version" >&2
+            exit 1
+          fi
+          gh release view "v$VERSION" --json isDraft --jq 'if .isDraft then error("Draft release") else .isDraft end'
+
+      - name: Checkout deployment helpers
+        uses: actions/checkout@v6
+        with:
+          repository: wendara-org/wendara-ci-actions
+          ref: main
+          path: .wendara-ci-actions
+          persist-credentials: false
+          token: ${{ secrets.CI_ACTIONS_READ_TOKEN || github.token }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Download current-run release artifact
+        if: inputs.artifact-name != ''
+        uses: actions/download-artifact@v6
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: .web-package
+
+      - name: Download retained release package (retries and configuration updates)
+        if: inputs.artifact-name == ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p .web-package
+          gh release download "v$VERSION" --dir .web-package \
+            --pattern "dist-$VERSION.tgz" --pattern "dist-$VERSION.tgz.sha256"
+
+      - name: Verify and extract the release package
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, os, pathlib, re, tarfile
+          directory = pathlib.Path('.web-package')
+          package = directory / f'dist-{os.environ["VERSION"]}.tgz'
+          expected = pathlib.Path(str(package) + '.sha256').read_text().strip()
+          if not re.fullmatch(r'[a-f0-9]{64}', expected):
+              raise SystemExit('Invalid checksum format')
+          if hashlib.sha256(package.read_bytes()).hexdigest() != expected:
+              raise SystemExit('Release package checksum mismatch')
+          with tarfile.open(package) as archive:
+              for member in archive.getmembers():
+                  if not (member.isfile() or member.isdir()):
+                      raise SystemExit('Release package must contain only regular files and directories')
+              archive.extractall('.web-dist', filter='data')
+          PY
+
+      - name: Apply environment runtime configuration
+        shell: bash
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.target-environment }}
+          LEGAL_API_BASE_URL: ${{ inputs.legal-api-base-url }}
+          WEB_WORKER_NAME: ${{ inputs.worker-name }}
+          WEB_HOSTNAME: ${{ inputs.hostname }}
+        run: node .wendara-ci-actions/scripts/web/prepare-static-deployment.mjs .web-dist .web-wrangler.json
+
+      - name: Publish prepared static assets
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ inputs.cloudflare-account-id }}
+          command: deploy --config .web-wrangler.json
+
+      - name: Check published configuration and legal route
+        shell: bash
+        env:
+          WEB_HOSTNAME: ${{ inputs.hostname }}
+          LEGAL_API_BASE_URL: ${{ inputs.legal-api-base-url }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            "https://$WEB_HOSTNAME/runtime/landing-config.json" -o .web-runtime-check.json
+          node -e 'const fs=require("fs"); const config=JSON.parse(fs.readFileSync(".web-runtime-check.json")); if(config.version!==1 || config.legalApiBaseUrl!==new URL(process.env.LEGAL_API_BASE_URL).origin) process.exit(1);'
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            "https://$WEB_HOSTNAME/legal/terms" -o /dev/null

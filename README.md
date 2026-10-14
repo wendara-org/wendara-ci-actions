@@ -21,6 +21,7 @@ Reusable GitHub Actions **workflows** and **helper scripts** for Wendara’s eng
   - [Java Backend (`reusable-java-backend.yml`)](#java-backend-reusable-java-backendyml)
   - [Backend Deploy (`reusable-backend-deploy.yml`)](#backend-deploy-reusable-backend-deployyml)
   - [Node Web Apps (`reusable-node-web.yml`)](#node-web-apps-reusable-node-webyml)
+  - [Static Web Deploy (`reusable-web-deploy.yml`)](#static-web-deploy-reusable-web-deployyml)
   - [Node Mobile Apps (`reusable-node-mobile.yml`)](#node-mobile-apps-reusable-node-mobileyml)
   - [Manual API Release (`reusable-manual-api-release.yml`)](#manual-api-release-reusable-manual-api-releaseyml)
 - [Helper Scripts](#helper-scripts)
@@ -402,80 +403,136 @@ jobs:
 
 ### Node Web Apps (`reusable-node-web.yml`)
 
-Reusable CI pipeline for **Node.js** web apps (React, Vite, Next.js static build) with artifact packaging.
+Reusable CI for Node web applications. Pull requests run lint, TypeScript checks, the complete `npm test` suite,
+and a compilation into a disposable runner directory. Validation does not package, upload, release, or deploy an
+application. A push to `develop` or `main` runs the same gates before semantic-release.
 
-**What it does**
+When semantic-release publishes, `build` checks out the exact release tag, validates the version, builds the public
+files, and creates `dist-<version>.tgz` with its SHA-256 checksum. Packages reject source maps, source/test directories,
+credentials, and symlinks. Normalized tar timestamps keep repeat packaging reproducible. The package is uploaded as
+`web-dist-<version>` and retained on the GitHub release; an existing release checksum must match before a retry can
+reuse its asset names. DEV prerelease cleanup still applies, so keep a sufficient prerelease history for DEV rollback.
 
-1. Runs code quality checks:
+| Input | Default | Purpose |
+|---|---|---|
+| `release-channel` | empty | `develop` or `main`; empty disables releases |
+| `node-version` | `24` | Node runtime |
+| `working-directory` | `.` | Caller application directory |
+| `dist-directory` | `dist` | Public build output |
+| `keep-prereleases` | `10` | Retained DEV prereleases |
 
-- `npm run lint`
-- `npm test`
-- (Optional) `npm run test:integration` if script exists
+`GPR_USER` and `GPR_TOKEN` remain optional. Optional repository secret `CI_ACTIONS_READ_TOKEN` supplies read-only contents access for helper checkout if ci-actions is private; otherwise the GitHub token suffices. The caller must grant `contents: write`, `packages: read`,
+`pull-requests: write`, and `issues: write`; write permissions are scoped to the jobs that need them.
 
-2. Builds web output (`npm run build`) and validates `dist/`.
-3. Packages output as `dist-<version>.tgz` + `.sha256` artifact.
-4. Runs semantic-release on `develop`/`main`.
-5. Cleans old prereleases on `develop`.
-6. Syncs `main` back to `develop` after stable release.
+| Job | Purpose |
+|---|---|
+| `lint` | ESLint |
+| `typecheck` | `npm run typecheck` |
+| `unit-tests` | Complete `npm test` suite; id retained for compatibility |
+| `compile-check` | Disposable compilation; no published artifact |
+| `release` | semantic-release after every quality gate |
+| `build` | Exact-tag build, package, checksum, and retained release assets |
+| `snapshot-cleanup` | DEV prerelease retention |
+| `sync-pr` | Merge actual main content into develop after a stable release |
+| `summary` | Package/version summary |
 
-**Inputs**
+Workflow outputs are `published`, `released_version`, `tag`, and `artifact_name`. Deploy only after the called
+workflow succeeds and `published == 'true'`. A docs/chore-only merge can produce no release and no deployment.
 
-| Name                | Type   | Default | Description                                  |
-|---------------------|--------|---------|----------------------------------------------|
-| `release-channel`   | string |         | `develop` or `main`. Empty disables release. |
-| `node-version`      | string | `24`    | Node.js version for setup.                   |
-| `working-directory` | string | `.`     | Directory where `package.json` lives.        |
-| `dist-directory`    | string | `dist`  | Build output directory to package.           |
-| `keep-prereleases`  | number | `10`    | How many prereleases to keep on develop.     |
+Migration for web consumers: implement `npm run typecheck`, and ensure `npm test` includes all unit and integration
+coverage. The optional separate `integration-tests` job is removed, matching mobile's unified testing strategy.
+Update branch-protection required checks accordingly. CLI helpers, artifact names, release channels, existing inputs,
+and the `unit-tests` id are preserved. Mobile, backend, and API-contract workflows are unchanged by this web change.
 
-**Secrets**
+The `sync-pr` job now merges real content rather than using the history-only `ours` strategy. Conflicts fail for
+human resolution. When content changes, the existing sync-PR flow applies; identical trees can still record history
+on develop. Verify branch-protection rules permit the existing history-only push behavior.
 
-| Secret      | Purpose                                  |
-|-------------|------------------------------------------|
-| `GPR_USER`  | Optional user for GitHub Packages auth.  |
-| `GPR_TOKEN` | Optional token for GitHub Packages auth. |
-
-**Jobs**
-
-| Job                 | Description                                                  |
-|---------------------|--------------------------------------------------------------|
-| `lint`              | Runs `npm run lint`.                                         |
-| `unit-tests`        | Runs `npm test`.                                             |
-| `integration-tests` | Runs `npm run test:integration` if script exists.            |
-| `build`             | Builds `dist` and uploads `dist-<version>.tgz` + checksum.   |
-| `release`           | Runs semantic-release for versioning/tags (on develop/main). |
-| `snapshot-cleanup`  | Cleans up old prereleases (develop only).                    |
-| `sync-pr`           | Creates PR to sync main → develop after release (main only). |
-
-**Example usage** (`wendara-landing/.github/workflows/ci.yml`):
+Example caller:
 
 ```yaml
-name: Landing · CI
-
-on:
-  push:
-    branches: [ develop, main ]
-  pull_request:
-    branches: [ develop, main ]
-  workflow_dispatch:
-
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-  checks: write
-
 jobs:
   landing:
     uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-node-web.yml@main
     with:
+      release-channel: ${{ github.event_name == 'push' && github.ref_name || '' }}
       working-directory: "."
       dist-directory: "dist"
-      release-channel: ${{ github.event_name == 'push' && github.ref_name || '' }}
     secrets:
       GPR_USER: ${{ secrets.GPR_USER }}
       GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+      CI_ACTIONS_READ_TOKEN: ${{ secrets.CI_ACTIONS_READ_TOKEN }}
 ```
+
+### Static Web Deploy (`reusable-web-deploy.yml`)
+
+Publishes an existing landing package to Cloudflare Workers Static Assets. It performs no application compilation or
+semantic-release. This workflow currently requires Wendara Landing's version-1 runtime-config and `_headers` contract;
+it is not a universal adapter for arbitrary web applications.
+
+| Input | Required | Purpose |
+|---|---|---|
+| `target-environment` | yes | `dev` or `prod` target; no GitHub Environment dependency |
+| `version` | yes | Exact version without `v`; DEV requires `-develop.N`, PROD requires stable |
+| `artifact-name` | no | Current-run artifact; otherwise download retained GitHub release assets |
+| `legal-api-base-url` | yes | Selected public HTTPS API origin |
+| `worker-name` | yes | Selected Cloudflare Worker name |
+| `hostname` | yes | Selected custom domain |
+| `cloudflare-account-id` | yes | Cloudflare account ID |
+
+GitHub Free private repositories use **caller repository** Actions variables/secrets, not GitHub Environments or
+organization settings. Configure `DEV_LEGAL_API_BASE_URL`, `PROD_LEGAL_API_BASE_URL`, `DEV_WEB_WORKER_NAME`,
+`PROD_WEB_WORKER_NAME`, `DEV_WEB_HOSTNAME`, `PROD_WEB_HOSTNAME`, and `CLOUDFLARE_ACCOUNT_ID` as repository variables.
+Pass the selected values through the required inputs. Pass repository secret `CLOUDFLARE_API_TOKEN` explicitly;
+optional separate `DEV_CLOUDFLARE_API_TOKEN` / `PROD_CLOUDFLARE_API_TOKEN` can fall back to the shared token only.
+Private Free repositories cannot use environment or organization variables/secrets; see
+[GitHub environments](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
+and [variable availability](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-variables).
+
+Optional `CI_ACTIONS_READ_TOKEN` is a repository secret with read-only contents access to the shared helper repo.
+If ci-actions is private, also enable reusable-workflow access from organization repositories under its Actions
+settings. That access does not expand the caller's `GITHUB_TOKEN` to clone another private repo. If ci-actions is
+public, the helper-read token is unnecessary. Secrets are never passed into PR application builds or public files.
+New external dependency: the official
+[`cloudflare/wrangler-action@v4`](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/).
+
+Deployment validates the target/version, checks the release exists and is not a draft, verifies the checksum,
+safely extracts regular files, rejects forbidden public files, and writes `runtime/landing-config.json` from the
+selected API input. It serves SPA legal routes, excludes DEV from indexing, and checks the deployed config and
+legal shell. These HTTP checks do not replace browser CORS, legal-content, and locale acceptance tests. A failed
+post-deploy check reports failure; it does not automatically revert Cloudflare. Re-publish the retained previous
+version for rollback, using the target's current configured API URL.
+
+To update an API URL without a release, change the target repository variable (`DEV_LEGAL_API_BASE_URL` or `PROD_LEGAL_API_BASE_URL`) and manually publish the **currently deployed
+version** through the caller workflow. Compiled JS/CSS stay unchanged. Cloudflare receives a new hosting deployment
+containing the changed public config; no application release/build occurs. Existing open pages pick up the URL on
+the next legal request. Required backend CORS and edge rules must also support the new origin/API.
+
+```yaml
+  deploy-dev:
+    needs: landing
+    if: github.ref == 'refs/heads/develop' && needs.landing.outputs.published == 'true'
+    uses: wendara-org/wendara-ci-actions/.github/workflows/reusable-web-deploy.yml@main
+    permissions:
+      contents: read
+    with:
+      target-environment: dev
+      version: ${{ needs.landing.outputs.released_version }}
+      artifact-name: ${{ needs.landing.outputs.artifact_name }}
+      legal-api-base-url: ${{ vars.DEV_LEGAL_API_BASE_URL }}
+      worker-name: ${{ vars.DEV_WEB_WORKER_NAME }}
+      hostname: ${{ vars.DEV_WEB_HOSTNAME }}
+      cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.DEV_CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+      CI_ACTIONS_READ_TOKEN: ${{ secrets.CI_ACTIONS_READ_TOKEN }}
+```
+
+Static delivery uses no Worker script, KV, database, analytics, or tunnel. `workers.dev` and version preview URLs
+are disabled, leaving the configured custom domain as the public entry point. CI and deployment concurrency must
+serialize branch releases and per-environment publishing. Configure the domain and token before enabling a caller's
+automatic deployment. Publish ci-actions changes first, then update consumers. Production should eventually pin
+both reusable workflows and helper checkout refs to the same reviewed version/SHA.
 
 ---
 
